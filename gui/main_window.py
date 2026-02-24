@@ -5,7 +5,7 @@ from modules.database_io import read_csv
 from gui.student_forms import open_student_form
 from gui.programs_forms import open_program_form
 from gui.college_forms import open_college_form
-
+from PIL import Image
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
@@ -31,6 +31,7 @@ class MainWindow(ctk.CTk):
         self.sort_reverse  = False   # False = ascending, True = descending
         self.configure(fg_color=BG_BASE)
 
+        self.iconphoto(True, tk.PhotoImage(file="assets/logo.png"))
         self.title("Student Information System")
         self.geometry("1200x700")
         self.update_idletasks()
@@ -61,8 +62,8 @@ class MainWindow(ctk.CTk):
 
         brand = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
         brand.pack(fill="x", padx=20, pady=(28, 24))
-        ctk.CTkLabel(brand, text="●", font=ctk.CTkFont(size=14),
-                     text_color=ACCENT_CYAN).pack(side="left")
+        logo_img = ctk.CTkImage(Image.open("assets/logo.png"), size=(48, 48))
+        ctk.CTkLabel(brand, image=logo_img, text="", width=48, height=48).pack(side="left", padx=(0, 8))
         ctk.CTkLabel(brand, text="  SIS Admin",
                      font=ctk.CTkFont(family="Courier", size=18, weight="bold"),
                      text_color=TEXT_PRIMARY).pack(side="left")
