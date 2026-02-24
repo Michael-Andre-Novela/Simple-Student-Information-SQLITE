@@ -169,22 +169,6 @@ Re-add college CCS  →  programs: college_code = "CCS"  ✅ restored
 ![Add College](assets/screenshots/addcollegeview_inlinux.jpeg)
 
 ---
-
-## 🖥 UI Overview
-
-- **Dark theme** with a GitHub-inspired color palette (`#0d1117` base)
-- **Sidebar navigation** with logo branding at top and bottom, nav buttons for Students, Programs, and Colleges
-- **Window icon** set from `assets/logo.png`
-- **Wide search bar** (320 px) with real-time filtering
-- **Record count badge** in the table header
-- **Empty-state row** displayed when no records match the search
-- **Modal forms** (centered on screen, blocks main window) for Add / Edit
-- **Confirmation dialogs** with cascade warnings before any delete
-- **Cancel button** on all forms and dialogs
-- **Action menu** (⋯) per row for Edit and Delete
-
----
-
 ## 📋 Sample Colleges
 
 | Code | College |
