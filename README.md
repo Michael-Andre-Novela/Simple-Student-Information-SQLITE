@@ -48,6 +48,7 @@ A desktop application for managing student, program, and college records — bui
 |-------|------------|
 | GUI Framework | [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) |
 | Table/Treeview | `tkinter.ttk.Treeview` |
+| Image Handling | [Pillow (PIL)](https://pillow.readthedocs.io/) |
 | Data Storage | CSV files via Python's `csv` module |
 | Validation | Custom regex-based validators |
 | Language | Python 3 |
@@ -63,6 +64,9 @@ Simple-Student-Information/
 │   ├── students.csv         # Student records
 │   ├── programs.csv         # Program records
 │   └── colleges.csv         # College records
+├── assets/
+│   ├── logo.png             # App logo (sidebar + window icon)
+│   └── screenshots/         # UI screenshots for documentation
 ├── gui/
 │   ├── main_window.py       # Main window, sidebar, treeview, pagination
 │   ├── student_forms.py     # Add/Edit/Delete student forms
@@ -92,7 +96,7 @@ source .venv/bin/activate        # Linux / macOS
 
 ### 3. Install dependencies
 ```bash
-pip install customtkinter
+pip install customtkinter pillow
 ```
 
 ### 4. Run the app
@@ -108,7 +112,7 @@ python main.py
 | Field | Rule |
 |-------|------|
 | ID | Format `YYYY-NNNN`, year between 2000 and current year, no duplicates |
-| First / Last Name | 2–64 characters, letters only (spaces and hyphens allowed) |
+| First / Last Name | 2–64 characters, letters only (spaces, hyphens, apostrophes, dots allowed) |
 | Year Level | Integer between 1 and 5 |
 | Gender | Male, Female, or Other |
 | Program | Must exist in the programs list |
@@ -123,7 +127,7 @@ python main.py
 ### College
 | Field | Rule |
 |-------|------|
-| Code | Letters only — max 16 characters, no duplicates |
+| Code | Letters only — at least 2 characters, max 16, no duplicates |
 | Name | 5–128 characters, not numbers only |
 
 ---
@@ -142,12 +146,39 @@ Re-add college CCS  →  programs: college_code = "CCS"  ✅ restored
 
 ---
 
-## 📸 UI Overview
+## 📸 Screenshots
 
-- **Dark theme** with a GitHub-inspired color palette
-- **Sidebar navigation** for Students, Programs, and Colleges
-- **Modal forms** (centered, blocks main window) for Add / Edit
+### Student Records
+![Student Records](assets/screenshots/studentsview_inlinux.jpeg)
+
+### Add Student Form
+![Add Student](assets/screenshots/addstudentview_inlinux.jpeg)
+
+### Program Management
+![Programs](assets/screenshots/programview_inlinux.jpeg)
+
+### Add Program Form
+![Add Program](assets/screenshots/Addprogramview_inlinux.jpeg)
+
+### College Management
+![Colleges](assets/screenshots/collegeview_inlinux.jpeg)
+
+### Add College Form
+![Add College](assets/screenshots/addcollegeview_inlinux.jpeg)
+
+---
+
+## 🖥 UI Overview
+
+- **Dark theme** with a GitHub-inspired color palette (`#0d1117` base)
+- **Sidebar navigation** with logo branding at top and bottom, nav buttons for Students, Programs, and Colleges
+- **Window icon** set from `assets/logo.png`
+- **Wide search bar** (320 px) with real-time filtering
+- **Record count badge** in the table header
+- **Empty-state row** displayed when no records match the search
+- **Modal forms** (centered on screen, blocks main window) for Add / Edit
 - **Confirmation dialogs** with cascade warnings before any delete
+- **Cancel button** on all forms and dialogs
 - **Action menu** (⋯) per row for Edit and Delete
 
 ---

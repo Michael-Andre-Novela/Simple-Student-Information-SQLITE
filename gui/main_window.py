@@ -92,9 +92,14 @@ class MainWindow(ctk.CTk):
             btn.pack(fill="x", padx=12, pady=3)
             self.nav_buttons.append((btn, color))
 
-        ctk.CTkLabel(self.sidebar_frame, text="v1.0.0",
-                     font=ctk.CTkFont(size=10),
-                     text_color=TEXT_MUTED).pack(side="bottom", pady=16)
+        self._bottom_logo_img = ctk.CTkImage(
+            Image.open("assets/logo.png"), size=(120, 120)
+        )
+        ctk.CTkLabel(
+            self.sidebar_frame, image=self._bottom_logo_img, text="",
+            width=120, height=120
+        ).pack(side="bottom", pady=16)
+
 
     def _set_active_nav(self, index):
         for i, (btn, color) in enumerate(self.nav_buttons):
@@ -183,7 +188,7 @@ class MainWindow(ctk.CTk):
 
         self.search_entry = ctk.CTkEntry(
             ctrl, placeholder_text=f"Search {entity.lower()}s…",
-            width=210, height=36, corner_radius=8,
+            width=320, height=36, corner_radius=8,
             border_color="#30363d", fg_color="#21262d",
             text_color=TEXT_PRIMARY, placeholder_text_color=TEXT_MUTED
         )
