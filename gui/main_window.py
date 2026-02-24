@@ -305,6 +305,8 @@ class MainWindow(ctk.CTk):
                 self.tree.column(col, width=180, anchor="w", minwidth=120)
             elif col == "id":
                 self.tree.column(col, width=110, anchor="center", minwidth=90)
+            elif col == "program_code":
+                self.tree.column(col, width=200, anchor="center", minwidth=160)
             else:
                 self.tree.column(col, width=120, anchor="center", minwidth=80)
 
