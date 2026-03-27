@@ -1,5 +1,7 @@
+"""
 import os
 import csv
+import sqlite3
 
 #So users don't have to worry about file paths, we can set up a base directory for our data files. 
 #This way, we can easily read from and write to our CSV files without hardcoding the paths every time.
@@ -58,12 +60,12 @@ def write_csv(file_key, data):
 
 
 def get_pk(file_key):
-    """Return the primary key column name for a given file key."""
+    #Return the primary key column name for a given file key.
     return 'id' if file_key == 'students' else 'code'
 
 
 def add_csv(file_key, row):
-    """Append a single new row to a CSV file."""
+    #Append a single new row to a CSV file.
     data = read_csv(file_key)
     data.append(row)
     write_csv(file_key, data)
@@ -102,4 +104,57 @@ def update_csv(file_key, id_value, updated_row, id_column=None):
 def sort_csv(file_key, sort_by_column, reverse=False):
     data = read_csv(file_key)
     return sorted(data, key=lambda x: x[sort_by_column].lower(), reverse=reverse)
-    
+
+"""
+
+import sqlite3
+
+def connection():
+    return sqlite3.connect('sis_database.db')
+
+c=connection.cursor()
+
+def db_initialization():
+    c.execute(""" CREATE TABLE students(
+              id TEXT,
+              firstname TEXT,
+              lastname TEXT,
+              program_code TEXT,
+              year TEXT,
+              gender TEXT
+              )
+""")
+    c.execute(""" CREATE TABLE colleges(
+              code TEXT,
+              name TEXT
+              )""")
+    c.execute(""" CREATE TABLE programs(
+              code TEXT,
+              name TEXT,
+              college_code TEXT
+              )""")
+
+def add_student(student_id, fname, lname, p_code, year, gender):
+    """Inserts a new student into the database."""
+    pass
+
+def add_program(code, name, college_code):
+    """Inserts a new program into the database."""
+    pass
+
+def add_college(code, name):
+    """Inserts a new college into the database."""
+    pass
+
+def update_student(student_id, fname, lname, p_code, year, gender):
+    """Updates an existing student record based on their ID."""
+    pass
+
+def update_program(code, name, college_code):
+    """Updates an existing program record based on its code."""
+    pass
+
+def delete_record(table_name, identifier):
+    """Removes a row from the specified table using its Primary Key."""
+    pass
+
