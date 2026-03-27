@@ -109,30 +109,43 @@ def sort_csv(file_key, sort_by_column, reverse=False):
 
 import sqlite3
 
-def connection():
-    return sqlite3.connect('sis_database.db')
-
-c=connection.cursor()
+def get_connection():
+    conn=sqlite3.connect('sis_database.db')
+    conn.execute("PRAGMA foreign_keys = ON;")
+    return conn
 
 def db_initialization():
-    c.execute(""" CREATE TABLE students(
-              id TEXT,
+    conn = get_connection()
+    c =conn.cursor()
+
+    # 1. Top Level: Colleges
+    c.execute(""" CREATE TABLE IF NOT EXISTS colleges(
+              code TEXT PRIMARY KEY,
+              name TEXT
+              )""")
+    
+    # 2. Mid Level: Programs (References Colleges)
+    c.execute(""" CREATE TABLE IF NOT EXISTS programs(
+              code TEXT PRIMARY KEY,
+              name TEXT,
+              college_code TEXT,
+              FOREIGN KEY (college_code) REFERENCES colleges(code)
+              ON DELETE CASCADE
+              )""")
+
+    # 3. Bottom Level: Students (References Programs)
+    c.execute(""" CREATE TABLE IF NOT EXISTS students(
+              id TEXT PRIMARY KEY,
               firstname TEXT,
               lastname TEXT,
               program_code TEXT,
               year TEXT,
-              gender TEXT
-              )
-""")
-    c.execute(""" CREATE TABLE colleges(
-              code TEXT,
-              name TEXT
+              gender TEXT,
+              FOREIGN KEY (program_code) REFERENCES programs(code)
+              ON DELETE SET NULL
               )""")
-    c.execute(""" CREATE TABLE programs(
-              code TEXT,
-              name TEXT,
-              college_code TEXT
-              )""")
+    conn.commit()
+    conn.close()
 
 def add_student(student_id, fname, lname, p_code, year, gender):
     """Inserts a new student into the database."""
@@ -158,3 +171,4 @@ def delete_record(table_name, identifier):
     """Removes a row from the specified table using its Primary Key."""
     pass
 
+db_initialization()
