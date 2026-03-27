@@ -147,28 +147,68 @@ def db_initialization():
     conn.commit()
     conn.close()
 
-def add_student(student_id, fname, lname, p_code, year, gender):
+def add_student(id, fname, lname, p_code, year, gender):
     """Inserts a new student into the database."""
-    pass
+    conn = get_connection()
+    c = conn.cursor()
+    try:
+        c.execute("""INSERT INTO students(id, firstname, lastname, program_code, year, gender)
+                  VALUES(?,?,?,?,?,?)""",
+                  (id,fname,lname,p_code,year,gender))
+        c.commit()
+    except sqlite3.IntegrityError:
+        print("Error: Program code does not exist or Student ID is a duplicate.")
+    finally:
+        conn.close()
 
 def add_program(code, name, college_code):
     """Inserts a new program into the database."""
-    pass
+    conn = get_connection()
+    c = conn.cursor()
+    
+    try:
+        c.execute(""" INSERT INTO programs(code, name, college_code)
+                  VALUES (?,?,?)""",
+                  (code,name,college_code))
+        c.commit()
+
+    except sqlite3.IntegrityError:
+        print("Error: Program code does not exist")
+    finally:
+        conn.close()
+
 
 def add_college(code, name):
     """Inserts a new college into the database."""
-    pass
+    conn = get_connection()
+    c = conn.cursor()
+
+    try:
+        c.execute("""INSERT INTO colleges(code,name)
+                  VALUES(?,?)""", (code,name))
+    except sqlite3.IntegrityError:
+        print("Error")
+    finally:
+        conn.close()
+
+    
 
 def update_student(student_id, fname, lname, p_code, year, gender):
     """Updates an existing student record based on their ID."""
-    pass
+    conn = get_connection()
+    c = conn.cursor()
+    
 
 def update_program(code, name, college_code):
     """Updates an existing program record based on its code."""
-    pass
+    conn = get_connection()
+    c = conn.cursor()
+    
 
 def delete_record(table_name, identifier):
     """Removes a row from the specified table using its Primary Key."""
-    pass
+    conn = get_connection()
+    c = conn.cursor()
+    
 
 db_initialization()
