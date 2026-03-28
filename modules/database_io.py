@@ -155,7 +155,7 @@ def add_student(id, fname, lname, p_code, year, gender):
         c.execute("""INSERT INTO students(id, firstname, lastname, program_code, year, gender)
                   VALUES(?,?,?,?,?,?)""",
                   (id,fname,lname,p_code,year,gender))
-        c.commit()
+        conn.commit()
     except sqlite3.IntegrityError:
         print("Error: Program code does not exist or Student ID is a duplicate.")
     finally:
@@ -170,7 +170,7 @@ def add_program(code, name, college_code):
         c.execute(""" INSERT INTO programs(code, name, college_code)
                   VALUES (?,?,?)""",
                   (code,name,college_code))
-        c.commit()
+        conn.commit()
 
     except sqlite3.IntegrityError:
         print("Error: Program code does not exist")
@@ -186,29 +186,83 @@ def add_college(code, name):
     try:
         c.execute("""INSERT INTO colleges(code,name)
                   VALUES(?,?)""", (code,name))
+        conn.commit()
     except sqlite3.IntegrityError:
         print("Error")
     finally:
         conn.close()
 
     
-
+#*********************update***************************************
 def update_student(student_id, fname, lname, p_code, year, gender):
     """Updates an existing student record based on their ID."""
     conn = get_connection()
     c = conn.cursor()
     
+    try:
+        c.execute("""UPDATE students SET firstname=?,
+                                         lastname=?,
+                                         program_code=?,
+                                         year = ?, 
+                                         gender = ?WHERE id = ?
+                  """, (fname,lname,p_code,year,gender, student_id))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        print("Error")
+    finally:
+        conn.close()
+
 
 def update_program(code, name, college_code):
     """Updates an existing program record based on its code."""
     conn = get_connection()
     c = conn.cursor()
-    
+
+    try:
+        c.execute(""" UPDATE programs SET college_code = ?,
+                                          name = ? WHERE code= ?
+                  """, (college_code,name,code))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        print("ERROR!")
+
+    finally:
+        conn.close()
+
+def update_college(code, name):
+    """Updates colleges"""
+    conn = get_connection()
+    c = conn.cursor()
+
+    try:
+        c.execute(""" UPDATE colleges SET 
+                                          name = ? WHERE code = ?
+                  """,(name,code))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        print("ERROR!")
+
+    finally:
+        conn.close()
+
+def get_all(table_name):
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(f"SELECT * FROM {table_name}").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 def delete_record(table_name, identifier):
     """Removes a row from the specified table using its Primary Key."""
+    pk="id" if table_name == "students" else "code"
     conn = get_connection()
     c = conn.cursor()
+    try:
+        c.execute(f" DELETE FROM {table_name} WHERE {pk}=?", (identifier,))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        print("ERROR!")
+    finally:
+        conn.close()
     
-
 db_initialization()
