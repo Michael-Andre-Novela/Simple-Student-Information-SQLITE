@@ -1,6 +1,6 @@
 import re
 from datetime import datetime
-from modules.database_io import read_csv
+from modules.database_io import get_one
 
 MIN_YEAR = 2000  # Earliest valid enrollment year
 
@@ -18,27 +18,19 @@ def _name_invalid(value):
     return not re.match(r"^[a-zA-Z\s\-\.']+$", str(value).strip())
 
 def id_already_exists(id_number):
-    """Check if a student ID already exists."""
-    students = read_csv("students")
-    return any(str(s['id']) == str(id_number) for s in students)
+    return get_one("students", id_number) is not None
 
 def program_exists(program_code):
-    programs = read_csv("programs")
-    return any(p['code'].upper() == program_code.upper() for p in programs)
+    return get_one("programs", program_code) is not None
 
 def college_exists(college_code):
-    colleges = read_csv("colleges")
-    return any(c['code'].upper() == college_code.upper() for c in colleges)
+    return get_one("colleges", college_code) is not None
 
 def program_code_exists(code):
-    """Check if a program code already exists."""
-    programs = read_csv("programs")
-    return any(p['code'].upper() == code.upper() for p in programs)
+    return get_one("programs", code) is not None
 
 def college_code_exists(code):
-    """Check if a college code already exists."""
-    colleges = read_csv("colleges")
-    return any(c['code'].upper() == code.upper() for c in colleges)
+    return get_one("colleges", code) is not None
 
 
 # ── Student Validator ──────────────────────────────────────────────────────
