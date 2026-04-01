@@ -1,10 +1,63 @@
 import sqlite3
+import csv
+import os
+
+MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(MODULE_DIR)
+DATA_DIR = os.path.join(PROJECT_ROOT, "data")
+DB_PATH = os.path.join(DATA_DIR, "sis_database.db")
 
 def get_connection():
-    conn=sqlite3.connect('sis_database.db')
+    conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
+def migration():
+    """"read existing csv  """
+    conn = get_connection()
+    c = conn.cursor()
+
+        # --- Colleges first (top of hierarchy) ---
+    colleges_path = os.path.join(DATA_DIR, "colleges.csv")
+    with open(colleges_path, newline="") as f:
+        for row in csv.DictReader(f):
+            c.execute(
+                "INSERT OR IGNORE INTO colleges (code, name) VALUES (?, ?)",
+                (row["code"], row["name"])
+            )
+    print(f"Colleges migrated.")
+
+    # --- Programs second (depends on colleges) ---
+    programs_path = os.path.join(DATA_DIR, "programs.csv")
+    with open(programs_path, newline="") as f:
+        for row in csv.DictReader(f):
+            c.execute(
+                "INSERT OR IGNORE INTO programs (code, name, college_code) VALUES (?, ?, ?)",
+                (row["code"], row["name"], row["college_code"])
+            )
+    print(f"Programs migrated.")
+
+    # --- Students last (depends on programs) ---
+    students_path = os.path.join(DATA_DIR, "students.csv")
+    with open(students_path, newline="") as f:
+        for row in csv.DictReader(f):
+            c.execute(
+                "INSERT OR IGNORE INTO students (id, firstname, lastname, program_code, year, gender) VALUES (?, ?, ?, ?, ?, ?)",
+                (row["id"], row["firstname"], row["lastname"],
+                 row["program_code"], row["year"], row["gender"])
+            )
+    print(f"Students migrated.")
+
+    conn.commit()
+
+    # Print summary
+    print("\n--- Migration Summary ---")
+    for table in ["colleges", "programs", "students"]:
+        count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        print(f"{table}: {count} records")
+
+    conn.close()
+    
 def db_initialization():
     conn = get_connection()
     c =conn.cursor()

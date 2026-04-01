@@ -1,7 +1,7 @@
 import customtkinter as ctk
 from PIL import Image
 import os
-from modules.database_io import read_csv, write_csv
+from modules.database_io import add_program, update_program, delete_record, get_all
 from modules.validators import validate_program
 
 BG_BASE     = "#0d1117"
@@ -40,7 +40,7 @@ def styled_option(parent, values, variable, width=340):
 
 def handle_delete(app, edit_data):
     code = str(edit_data[0])
-    all_students = read_csv("students")
+    all_students = get_all("students")
     affected = [s for s in all_students if s.get('program_code') == code]
 
     confirm = ctk.CTkToplevel(app)
@@ -66,18 +66,9 @@ def handle_delete(app, edit_data):
     bf.pack(pady=20)
 
     def confirm_delete():
-        all_p = read_csv("programs")
-        updated_p = [p for p in all_p if p['code'] != code]
-        write_csv("programs", updated_p)
-        if affected:
-            all_s = read_csv("students")
-            updated_s = []
-            for s in all_s:
-                if s.get('program_code') == code:
-                    s['program_code'] = f"__deleted__{code}"
-                updated_s.append(s)
-            write_csv("students", updated_s)
-        app.current_data = read_csv(app.current_file_key)
+        delete_record('programs', code)
+
+        app.current_data = get_all(app.current_file_key)
         app.refresh_table(app.current_display_keys)
         confirm.destroy()
 
@@ -126,7 +117,7 @@ def open_program_form(app, edit_data=None):
     name_entry = styled_entry(body, "Full program name")
     name_entry.pack(anchor="w")
 
-    colleges_data = read_csv("colleges")
+    colleges_data = get_all("colleges")
     college_list = [c['code'] for c in colleges_data] if colleges_data else ["N/A"]
     college_var = ctk.StringVar(value=college_list[0])
 
@@ -154,22 +145,12 @@ def open_program_form(app, edit_data=None):
             error_label.configure(text=msg)
             return
 
-        all_programs = read_csv("programs")
         if is_edit:
-            updated = [program_data if p['code'] == code else p for p in all_programs]
+            update_program(code, name, college_var.get())
         else:
-            updated = all_programs + [program_data]
-            # Re-link unassigned students back to this program
-            all_students = read_csv("students")
-            relinked_students = []
-            for s in all_students:
-                if s.get('program_code') == f"__deleted__{code}":
-                    s['program_code'] = code
-                relinked_students.append(s)
-            write_csv("students", relinked_students)
+           add_program(code,name, college_var.get())
 
-        write_csv("programs", updated)
-        app.current_data = read_csv("programs")
+        app.current_data = get_all("programs")
         app.refresh_table(app.current_display_keys)
         form.destroy()
 

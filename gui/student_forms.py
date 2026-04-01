@@ -1,7 +1,7 @@
 import customtkinter as ctk
 from PIL import Image
 import os
-from modules.database_io import read_csv, write_csv
+from modules.database_io import add_student, update_student, delete_record, get_all
 from modules.validators import validate_student
 
 # Palette
@@ -62,10 +62,8 @@ def handle_delete(app, edit_data):
     bf.pack(pady=20)
 
     def confirm_delete():
-        all_s = read_csv("students")
-        updated = [s for s in all_s if s['id'] != str(edit_data[0])]
-        write_csv("students", updated)
-        app.current_data = read_csv(app.current_file_key)
+        delete_record("students", str(edit_data[0]))
+        app.current_data = get_all(app.current_file_key)
         app.refresh_table(app.current_display_keys)
         confirm.destroy()
 
@@ -135,7 +133,7 @@ def open_student_form(app, edit_data=None):
     year_menu.pack(side="left")
 
     # College dropdown
-    colleges_data = read_csv("colleges")
+    colleges_data = get_all("colleges")
     college_codes = [c['code'] for c in colleges_data] if colleges_data else ["N/A"]
     college_var = ctk.StringVar(value=college_codes[0])
     field("College", styled_option, college_codes, college_var)
@@ -147,7 +145,7 @@ def open_student_form(app, edit_data=None):
     program_menu.pack(anchor="w")
 
     def update_programs(*_):
-        all_programs = read_csv("programs")
+        all_programs = get_all("programs")
         filtered = [p['code'] for p in all_programs
                     if p.get('college_code') == college_var.get()]
         if not filtered:
@@ -187,18 +185,26 @@ def open_student_form(app, edit_data=None):
             "year":         year_var.get(),
             "gender":       gender_var.get()
         }
+        
         is_valid, *msg = validate_student(student_data, skip_id_check=is_edit)
         if not is_valid:
             error_label.configure(text=msg[0] if msg else "Invalid input.")
             return
-        all_students = read_csv("students")
+        
         if is_edit:
-            updated = [student_data if s['id'] == student_data['id'] else s
-                       for s in all_students]
+            update_student(student_data["id"],student_data["firstname"],
+                          student_data["lastname"],
+                          student_data["program_code"],
+                          student_data["year"],
+                          student_data["gender"])
         else:
-            updated = all_students + [student_data]
-        write_csv("students", updated)
-        app.current_data = read_csv("students")
+            add_student(student_data["id"],student_data["firstname"],
+                          student_data["lastname"],
+                          student_data["program_code"],
+                          student_data["year"],
+                          student_data["gender"])
+      
+        app.current_data = get_all("students")
         app.refresh_table(app.current_display_keys)
         form.destroy()
 

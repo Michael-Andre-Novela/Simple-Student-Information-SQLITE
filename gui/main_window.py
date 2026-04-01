@@ -2,7 +2,7 @@ from tkinter import ttk
 import tkinter as tk
 import customtkinter as ctk
 import os
-from modules.database_io import read_csv
+from modules.database_io import get_all, get_one, delete_record, search, sort
 from gui.student_forms import open_student_form
 from gui.programs_forms import open_program_form
 from gui.college_forms import open_college_form
@@ -431,7 +431,7 @@ class MainWindow(ctk.CTk):
                              "program_code", "year", "gender", "college"),
                             accent=ACCENT_CYAN)
         self.tree.column("firstname", width=160)
-        self.current_data = read_csv("students")
+        self.current_data = get_all("students")
         self.update_idletasks() 
         self.after(150, lambda: self.refresh_table(display_keys))
 
@@ -440,7 +440,7 @@ class MainWindow(ctk.CTk):
         self.clear_content()
         self.current_page  = 1
         self.sort_reverse  = False
-        self.current_data  = read_csv("programs")
+        self.current_data  = get_all("programs")
         self.update_idletasks() 
         search_opts  = {"Code": "code", "Name": "name", "College": "college_code"}
         display_keys = ["code", "name", "college_code"]
@@ -460,7 +460,7 @@ class MainWindow(ctk.CTk):
         self.clear_content()
         self.current_page  = 1
         self.sort_reverse  = False
-        self.current_data  = read_csv("colleges")
+        self.current_data  = get_all("colleges")
         search_opts  = {"Code": "code", "Name": "name"}
         display_keys = ["code", "name"]
         self.update_idletasks() 
@@ -477,10 +477,10 @@ class MainWindow(ctk.CTk):
     # ************************************ Data Operations ************************************
     def sort_view_data(self, file_key, sort_col, display_keys):
         if not hasattr(self, 'current_data') or not self.current_data:
-            self.current_data = read_csv(file_key)
+            self.current_data = get_all(file_key)
 
         if sort_col == "college" and file_key == "students":
-            programs_list = read_csv("programs")
+            programs_list = get_all("programs")
             prog_to_col   = {p['code']: p.get('college_code', '') for p in programs_list}
             self.current_data.sort(
                 key=lambda x: str(prog_to_col.get(x.get('program_code'), "")).lower(),
@@ -498,31 +498,34 @@ class MainWindow(ctk.CTk):
     def search_view_data(self, file_key, search_map, display_keys):
         query            = self.search_entry.get().strip().lower()
         column_to_search = search_map[self.search_var.get()]
-        all_data         = read_csv(file_key)
 
         if not query:
-            self.current_data = all_data
+            self.current_data = get_all(file_key)
+            self.current_page = 1
+            self.refresh_table(display_keys)
+            return
         else:
-            self.current_data = []
             if column_to_search == "college" and file_key == "students":
-                progs   = read_csv("programs")
+                all_data = get_all("students")
+                progs = get_all("programs")
                 mapping = {p['code']: p.get('college_code', '').lower() for p in progs}
-                for row in all_data:
-                    if query in mapping.get(row.get('program_code', ''), ''):
-                        self.current_data.append(row)
+                self.current_data = [
+                    row for row in all_data
+                    if query in mapping.get(row.get('program_code', ''), '')
+                ]
             else:
-                for row in all_data:
-                    cell_value = str(row.get(column_to_search, "")).lower()
-                    if cell_value.startswith(query):
-                        self.current_data.append(row)
-
+                self.current_data = search(file_key, column_to_search, query)
+                self.current_page = 1
+                self.refresh_table(display_keys)
+                return  
+            
         self.current_page = 1
         self.refresh_table(display_keys)
 
     def refresh_table(self, display_keys):
         rows_per_page = self._get_rows_per_page()
         try:
-            programs_list = read_csv("programs")
+            programs_list = get_all("programs")
             prog_to_col   = {p['code']: p.get('college_code', 'N/A') for p in programs_list}
         except:
             prog_to_col = {}
@@ -547,8 +550,6 @@ class MainWindow(ctk.CTk):
                         val = prog_to_col.get(s.get('program_code'), "—")
                     else:
                         val = s.get(key, "—")
-                    if isinstance(val, str) and val.startswith("__deleted__"):
-                        val = f"[Deleted] {val[len('__deleted__'):]}"
                     row_values.append(val)
                 row_values.append("⋯  Actions")
                 tag = "evenrow" if i % 2 == 0 else "oddrow"
@@ -568,14 +569,11 @@ class MainWindow(ctk.CTk):
             return
         item_values  = self.tree.item(selected_item)['values']
         target_id    = str(item_values[0])
-        all_data     = read_csv(file_key)
-        pk           = "id" if file_key == "students" else "code"
-        updated_data = [row for row in all_data if str(row.get(pk)) != target_id]
-        from modules.database_io import write_csv
-        write_csv(file_key, updated_data)
-        self.current_data = updated_data
         
-        total_pages = max(1, -(-len(updated_data) // rows_per_page))
+        delete_record(file_key, target_id)
+        self.current_data = get_all(file_key)
+      
+        total_pages = max(1, -(-len(self.current_data) // rows_per_page))
         if self.current_page > total_pages:
             self.current_page = total_pages
         self.refresh_table(display_keys)
@@ -588,18 +586,17 @@ class MainWindow(ctk.CTk):
         item_values = self.tree.item(selected_item)['values']
 
         pk = "id" if file_key == "students" else "code"
-        all_data = read_csv(file_key)
-        raw = next((row for row in all_data if str(row.get(pk)) == str(item_values[0])), None)
+        raw = get_one(file_key, str(item_values[0]))
         if raw is None:
             return
         raw_values = [raw.get(k, "") for k in display_keys] + ["⋯  Actions"]
         
         if file_key == "students":
-            open_student_form(self, edit_data=item_values)
+            open_student_form(self, edit_data=raw_values)
         elif file_key == "programs":
-            open_program_form(self, edit_data=item_values)
+            open_program_form(self, edit_data=raw_values)
         elif file_key == "colleges":
-            open_college_form(self, edit_data=item_values)
+            open_college_form(self, edit_data=raw_values)
 
     def _open_delete_confirm(self):
         selected_item = self.tree.selection()

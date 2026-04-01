@@ -1,7 +1,7 @@
 import customtkinter as ctk
 from PIL import Image
 import os
-from modules.database_io import read_csv, write_csv
+from modules.database_io import add_college, update_college, delete_record, get_all
 from modules.validators import validate_college
 
 BG_BASE      = "#0d1117"
@@ -30,10 +30,10 @@ def styled_entry(parent, placeholder, width=340):
 
 def handle_delete(app, edit_data):
     code = str(edit_data[0])
-    all_programs = read_csv("programs")
+    all_programs = get_all("programs")
     affected_programs = [p for p in all_programs if p.get('college_code') == code]
     affected_codes = {p['code'] for p in affected_programs}
-    all_students = read_csv("students")
+    all_students = get_all("students")
     affected_students = [s for s in all_students if s.get('program_code') in affected_codes]
 
     confirm = ctk.CTkToplevel(app)
@@ -62,26 +62,8 @@ def handle_delete(app, edit_data):
     bf.pack(pady=20)
 
     def confirm_delete():
-        all_c = read_csv("colleges")
-        updated_c = [c for c in all_c if c['code'] != code]
-        write_csv("colleges", updated_c)
-        if affected_programs:
-            all_p = read_csv("programs")
-            updated_p = []
-            for p in all_p:
-                if p.get('college_code') == code:
-                    p['college_code'] = f"__deleted__{code}"
-                updated_p.append(p)
-            write_csv("programs", updated_p)
-        if affected_students:
-            all_s = read_csv("students")
-            updated_s = []
-            for s in all_s:
-                if s.get('program_code') in affected_codes:
-                    s['program_code'] = f"__deleted__{s['program_code']}"
-                updated_s.append(s)
-            write_csv("students", updated_s)
-        app.current_data = read_csv(app.current_file_key)
+        delete_record("colleges", str(edit_data[0]))
+        app.current_data = get_all(app.current_file_key)
         app.refresh_table(app.current_display_keys)
         confirm.destroy()
 
@@ -148,33 +130,14 @@ def open_college_form(app, edit_data=None):
         if not is_valid:
             error_label.configure(text=msg)
             return
-
-        all_colleges = read_csv("colleges")
+        
         if is_edit:
-            updated = [college_data if c['code'] == code else c for c in all_colleges]
+            update_college(code,name)
         else:
-            updated = all_colleges + [college_data]
-            # Re-link unassigned programs back to this college
-            all_programs = read_csv("programs")
-            relinked_programs = []
-            for p in all_programs:
-                if p.get('college_code') == f"__deleted__{code}":
-                  p['college_code'] = code
-                relinked_programs.append(p)
-            write_csv("programs", relinked_programs)
-
-            all_students = read_csv("students")
-            relinked_students = []
-            for s in all_students:
-                if s.get('program_code', '').startswith('__deleted__'):
-                    original = s['program_code'][len('__deleted__'):]
-                    if original in {p['code'] for p in relinked_programs if p.get('college_code') == code}:
-                        s['program_code'] = original
-                relinked_students.append(s)
-            write_csv("students", relinked_students)
-
-        write_csv("colleges", updated)
-        app.current_data = read_csv("colleges")
+            add_college(code,name)
+            
+        
+        app.current_data = get_all("colleges")
         app.refresh_table(app.current_display_keys)
         form.destroy()
 
