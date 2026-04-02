@@ -2,7 +2,7 @@ from tkinter import ttk
 import tkinter as tk
 import customtkinter as ctk
 import os
-from modules.database_io import get_all, get_one, delete_record, search, sort
+from modules.database_io import get_all, get_one, delete_record, get_page, get_count
 from gui.student_forms import open_student_form
 from gui.programs_forms import open_program_form
 from gui.college_forms import open_college_form
@@ -27,6 +27,12 @@ SELECTED_ROW = "#1d3a5f"
 class MainWindow(ctk.CTk):
     def __init__(self):
         super().__init__()
+        self.current_table = "students"
+        self.current_file_key = "students"
+        self.current_sort_col = None
+        self.current_sort_reverse = False
+        self.current_search_column = None
+        self.current_search_query = ""
         self.current_data  = []
         self.current_page  = 1
         self.sort_reverse  = False   # False = ascending, True = descending
@@ -341,7 +347,7 @@ class MainWindow(ctk.CTk):
         self.pagination_frame.grid(row=4, column=0, sticky="ew",
                                    padx=24, pady=(0, 16))
 
-        total       = len(self.current_data)
+        total       = self._get_total_records()
         total_pages = max(1, -(-total //  rows_per_page))
         start = (self.current_page - 1) * rows_per_page + 1 if total else 0
         end   = min(self.current_page * rows_per_page, total)
@@ -414,6 +420,12 @@ class MainWindow(ctk.CTk):
         self.clear_content()
         self.current_page  = 1
         self.sort_reverse  = False
+        self.current_table = "students"
+        self.current_file_key = "students"
+        self.current_sort_col = None
+        self.current_sort_reverse = False
+        self.current_search_column = None
+        self.current_search_query = ""
         search_opts = {"ID": "id", "First Name": "firstname",
                        "Last Name": "lastname", "Program Code": "program_code",
                        "Year": "year", "Gender": "gender", "College": "college"}
@@ -431,7 +443,6 @@ class MainWindow(ctk.CTk):
                              "program_code", "year", "gender", "college"),
                             accent=ACCENT_CYAN)
         self.tree.column("firstname", width=160)
-        self.current_data = get_all("students")
         self.update_idletasks() 
         self.after(150, lambda: self.refresh_table(display_keys))
 
@@ -440,7 +451,12 @@ class MainWindow(ctk.CTk):
         self.clear_content()
         self.current_page  = 1
         self.sort_reverse  = False
-        self.current_data  = get_all("programs")
+        self.current_table = "programs"
+        self.current_file_key = "programs"
+        self.current_sort_col = None
+        self.current_sort_reverse = False
+        self.current_search_column = None
+        self.current_search_query = ""
         self.update_idletasks() 
         search_opts  = {"Code": "code", "Name": "name", "College": "college_code"}
         display_keys = ["code", "name", "college_code"]
@@ -460,7 +476,12 @@ class MainWindow(ctk.CTk):
         self.clear_content()
         self.current_page  = 1
         self.sort_reverse  = False
-        self.current_data  = get_all("colleges")
+        self.current_table = "colleges"
+        self.current_file_key = "colleges"
+        self.current_sort_col = None
+        self.current_sort_reverse = False
+        self.current_search_column = None
+        self.current_search_query = ""
         search_opts  = {"Code": "code", "Name": "name"}
         display_keys = ["code", "name"]
         self.update_idletasks() 
@@ -476,49 +497,20 @@ class MainWindow(ctk.CTk):
 
     # ************************************ Data Operations ************************************
     def sort_view_data(self, file_key, sort_col, display_keys):
-        if not hasattr(self, 'current_data') or not self.current_data:
-            self.current_data = get_all(file_key)
-
-        if sort_col == "college" and file_key == "students":
-            programs_list = get_all("programs")
-            prog_to_col   = {p['code']: p.get('college_code', '') for p in programs_list}
-            self.current_data.sort(
-                key=lambda x: str(prog_to_col.get(x.get('program_code'), "")).lower(),
-                reverse=self.sort_reverse
-            )
-        else:
-            self.current_data.sort(
-                key=lambda x: str(x.get(sort_col, "")).lower(),
-                reverse=self.sort_reverse
-            )
-
+        self.current_table = file_key
+        self.current_file_key = file_key
+        self.current_sort_col = sort_col
+        self.current_sort_reverse = self.sort_reverse
         self.current_page = 1
         self.refresh_table(display_keys)
 
     def search_view_data(self, file_key, search_map, display_keys):
         query            = self.search_entry.get().strip().lower()
         column_to_search = search_map[self.search_var.get()]
-
-        if not query:
-            self.current_data = get_all(file_key)
-            self.current_page = 1
-            self.refresh_table(display_keys)
-            return
-        else:
-            if column_to_search == "college" and file_key == "students":
-                all_data = get_all("students")
-                progs = get_all("programs")
-                mapping = {p['code']: p.get('college_code', '').lower() for p in progs}
-                self.current_data = [
-                    row for row in all_data
-                    if query in mapping.get(row.get('program_code', ''), '')
-                ]
-            else:
-                self.current_data = search(file_key, column_to_search, query)
-                self.current_page = 1
-                self.refresh_table(display_keys)
-                return  
-            
+        self.current_table = file_key
+        self.current_file_key = file_key
+        self.current_search_column = column_to_search if query else None
+        self.current_search_query = query
         self.current_page = 1
         self.refresh_table(display_keys)
 
@@ -530,12 +522,23 @@ class MainWindow(ctk.CTk):
         except:
             prog_to_col = {}
 
+        page_data = get_page(
+            self.current_file_key,
+            self.current_page,
+            rows_per_page,
+            order_by=self.current_sort_col,
+            reverse=self.current_sort_reverse,
+            search_column=self.current_search_column,
+            search_query=self.current_search_query,
+        )
+        total = get_count(
+            self.current_file_key,
+            search_column=self.current_search_column,
+            search_query=self.current_search_query,
+        )
+
         for item in self.tree.get_children():
             self.tree.delete(item)
-        
-        start_idx = (self.current_page - 1) * rows_per_page
-        end_idx   = start_idx + rows_per_page
-        page_data = self.current_data[start_idx:end_idx]
 
         if not page_data:
             num_cols   = len(display_keys) + 1
@@ -556,7 +559,6 @@ class MainWindow(ctk.CTk):
                 self.tree.insert("", "end", values=row_values, tags=(tag,))
 
         if hasattr(self, 'count_label'):
-            total = len(self.current_data)
             self.count_label.configure(text=f"  {total} record{'s' if total != 1 else ''}  ")
 
         self.setup_pagination(display_keys)
@@ -571,9 +573,8 @@ class MainWindow(ctk.CTk):
         target_id    = str(item_values[0])
         
         delete_record(file_key, target_id)
-        self.current_data = get_all(file_key)
-      
-        total_pages = max(1, -(-len(self.current_data) // rows_per_page))
+        total_records = self._get_total_records()
+        total_pages = max(1, -(-total_records // rows_per_page))
         if self.current_page > total_pages:
             self.current_page = total_pages
         self.refresh_table(display_keys)
@@ -667,8 +668,16 @@ class MainWindow(ctk.CTk):
                 row_height  = 46  # must match rowheight in setup_treeview
                 rows        = max(1, tree_height // row_height)
                 return rows
+            
             except:
                 return 10  # fallback
+
+    def _get_total_records(self):
+        return get_count(
+            self.current_file_key,
+            search_column=self.current_search_column,
+            search_query=self.current_search_query,
+        )
     
 if __name__ == "__main__":
     app = MainWindow()

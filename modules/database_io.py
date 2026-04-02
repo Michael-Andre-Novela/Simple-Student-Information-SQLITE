@@ -7,10 +7,57 @@ PROJECT_ROOT = os.path.dirname(MODULE_DIR)
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 DB_PATH = os.path.join(DATA_DIR, "sis_database.db")
 
+ALLOWED_COLUMNS = {
+    "students": {"id", "firstname", "lastname", "program_code", "year", "gender", "college"},
+    "programs": {"code", "name", "college_code"},
+    "colleges": {"code", "name"},
+}
+
 def get_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
+
+
+def _validate_table(table_name):
+    if table_name not in ALLOWED_COLUMNS:
+        raise ValueError(f"Invalid table name: {table_name}")
+
+
+def _build_where_clause(table_name, search_column, search_query):
+    if not search_column or not search_query:
+        return "", []
+
+    query_param = f"%{search_query}%"
+
+    if table_name == "students" and search_column == "college":
+        return (
+            " WHERE EXISTS ("
+            "SELECT 1 FROM programs p "
+            "WHERE p.code = students.program_code "
+            "AND p.college_code LIKE ?"
+            ")",
+            [query_param],
+        )
+
+    if search_column not in ALLOWED_COLUMNS[table_name]:
+        raise ValueError(f"Invalid search column '{search_column}' for table '{table_name}'")
+
+    return f" WHERE {search_column} LIKE ?", [query_param]
+
+
+def _build_order_clause(table_name, order_by, reverse):
+    if not order_by:
+        return ""
+
+    if table_name == "students" and order_by == "college":
+        order_expr = "(SELECT p.college_code FROM programs p WHERE p.code = students.program_code)"
+    else:
+        if order_by not in ALLOWED_COLUMNS[table_name]:
+            raise ValueError(f"Invalid order column '{order_by}' for table '{table_name}'")
+        order_expr = order_by
+
+    return f" ORDER BY {order_expr} {'DESC' if reverse else 'ASC'}"
 
 def migration():
     """"read existing csv  """
@@ -239,19 +286,32 @@ def get_one(table_name, identifier):
     conn.close()
     return dict(row) if row else None
 
-def get_page(table_name, page, rows_per_page):
+def get_page(
+    table_name,
+    page,
+    rows_per_page,
+    order_by=None,
+    reverse=False,
+    search_column=None,
+    search_query="",
+):
+    _validate_table(table_name)
     offset = (page - 1) * rows_per_page
     conn = get_connection()
     conn.row_factory = sqlite3.Row
-    rows = conn.execute(
-        f"SELECT * FROM {table_name} LIMIT ? OFFSET ?", (rows_per_page, offset)
-    ).fetchall()
+    where_sql, where_params = _build_where_clause(table_name, search_column, search_query)
+    order_sql = _build_order_clause(table_name, order_by, reverse)
+    sql = f"SELECT * FROM {table_name}{where_sql}{order_sql} LIMIT ? OFFSET ?"
+    rows = conn.execute(sql, (*where_params, rows_per_page, offset)).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
-def get_count(table_name):
+def get_count(table_name, search_column=None, search_query=""):
+    _validate_table(table_name)
     conn = get_connection()
-    count = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+    where_sql, where_params = _build_where_clause(table_name, search_column, search_query)
+    sql = f"SELECT COUNT(*) FROM {table_name}{where_sql}"
+    count = conn.execute(sql, where_params).fetchone()[0]
     conn.close()
     return count
 

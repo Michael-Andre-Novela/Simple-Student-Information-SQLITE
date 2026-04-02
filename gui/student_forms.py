@@ -1,7 +1,7 @@
 import customtkinter as ctk
 from PIL import Image
 import os
-from modules.database_io import add_student, update_student, delete_record, get_all
+from modules.database_io import add_student, update_student, delete_record, get_all, get_one
 from modules.validators import validate_student
 
 # Palette
@@ -135,7 +135,7 @@ def open_student_form(app, edit_data=None):
     # College dropdown
     colleges_data = get_all("colleges")
     college_codes = [c['code'] for c in colleges_data] if colleges_data else ["N/A"]
-    college_var = ctk.StringVar(value=college_codes[0])
+    college_var = ctk.StringVar(value=college_codes[0] if college_codes else "N/A")
     field("College", styled_option, college_codes, college_var)
 
     # Program dropdown (filtered)
@@ -169,7 +169,8 @@ def open_student_form(app, edit_data=None):
         lname_entry.insert(0, str(edit_data[2]))
         year_var.set(str(edit_data[4]))
         gender_var.set(str(edit_data[5]))
-        college_code = str(edit_data[6])
+        prog = get_one("programs", str(edit_data[3])) 
+        college_code = prog['college_code'] if prog else college_codes[0]
         if college_code in college_codes:
             college_var.set(college_code)
             update_programs()
