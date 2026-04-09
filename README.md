@@ -1,6 +1,6 @@
 # 🎓 Simple Student Information System (SIS)
 
-A desktop application for managing student, program, and college records — built with Python and CustomTkinter.
+A desktop application for managing student, program, and college records — built with Python, CustomTkinter, and SQLite.
 
 ---
 
@@ -11,17 +11,16 @@ A desktop application for managing student, program, and college records — bui
 - Fields: Student ID, First Name, Last Name, Program, Year Level, Gender
 - College is automatically resolved from the student's enrolled program
 - Student ID is validated against the format `YYYY-NNNN`
+- Student names are normalized before saving
 
 ### 📚 Program Management
 - Add, edit, and delete academic programs
 - Each program is linked to a college
-- Deleting a program marks affected students as **unassigned** (non-destructive)
-- Re-adding a deleted program **automatically re-links** previously unassigned students
+- Program and college codes are validated before saving
 
 ### 🏛 College Management
 - Add, edit, and delete colleges
-- Deleting a college cascades: affected programs and their students are marked unassigned
-- Re-adding a deleted college **fully restores** the cascade — programs and students are re-linked
+- College codes are validated before saving
 
 ### 🔍 Search & Filter
 - Search by any column (ID, name, program, year, gender, college)
@@ -36,9 +35,14 @@ A desktop application for managing student, program, and college records — bui
 - Page number buttons with `…` ellipsis for large datasets
 - Live record count badge in the header
 
+### 💾 Backup & Restore
+- Backup and restore tools are built into the sidebar
+- Backups are written to `data/backups/`
+- Restores verify database integrity before and after replacement
+
 ### 🗃 Data Persistence
-- All data stored as plain `.csv` files — no database required
-- Files are human-readable and portable
+- Data is stored in a local SQLite database (`data/sis_database.db`)
+- CSV files are still used for migration/import/export workflows
 
 ---
 
@@ -49,7 +53,7 @@ A desktop application for managing student, program, and college records — bui
 | GUI Framework | [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) |
 | Table/Treeview | `tkinter.ttk.Treeview` |
 | Image Handling | [Pillow (PIL)](https://pillow.readthedocs.io/) |
-| Data Storage | CSV files via Python's `csv` module |
+| Data Storage | SQLite (`sqlite3`) + CSV import/export |
 | Validation | Custom regex-based validators |
 | Language | Python 3 |
 
@@ -58,8 +62,8 @@ A desktop application for managing student, program, and college records — bui
 ## 📁 Project Structure
 
 ```
-Simple-Student-Information/
-├── main.py                  # Entry point
+sis-SQLite/
+├── main.py                  # Preferred entry point
 ├── data/
 │   ├── students.csv         # Student records
 │   ├── programs.csv         # Program records
@@ -73,18 +77,19 @@ Simple-Student-Information/
 │   ├── programs_forms.py    # Add/Edit/Delete program forms
 │   └── college_forms.py     # Add/Edit/Delete college forms
 └── modules/
-    ├── database_io.py       # CSV read/write/search/sort utilities
-    └── validators.py        # Input validation for all entities
+    ├── database_io.py       # SQLite helpers, CSV import/export, backup/restore
+    └── validators.py        # Input validation and normalization for all entities
 ```
 
 ---
 
 ## 🚀 Getting Started
 
-### 1. Clone the repository
+### 1. Open the project folder
+If you're working from this workspace, open the `sis-SQLITE/` folder first.
+
 ```bash
-git clone https://github.com/Michael-Andre-Novela/Simple-Student-Information.git
-cd Simple-Student-Information
+cd /path/to/your/sis-SQLITE
 ```
 
 ### 2. Create and activate a virtual environment
@@ -104,6 +109,12 @@ pip install customtkinter pillow
 python main.py
 ```
 
+If you want to launch the window module directly, you can also run:
+
+```bash
+python gui/main_window.py
+```
+
 ---
 
 ## ✅ Validation Rules
@@ -113,9 +124,38 @@ python main.py
 |-------|------|
 | ID | Format `YYYY-NNNN`, year between 2000 and current year, no duplicates |
 | First / Last Name | 2–64 characters, letters only (spaces, hyphens, apostrophes, dots allowed) |
-| Year Level | Integer between 1 and 4 |
+| Year Level | Integer between 1 and 5 |
 | Gender | Male, Female, or Other |
 | Program | Must exist in the programs list |
+
+### Data Normalization
+- Student names are normalized (trim extra spaces, title-case words)
+- Program and college data are trimmed before validation
+- Duplicate student profile checks are enforced for regular create/update flows
+
+---
+
+## 🧪 CSV Pre-Validation
+
+- `validate_csv_rows(table_name, filename)` validates all rows before import
+- Returns tuple: `(is_valid, errors, normalized_rows)`
+- Errors include row number, field, and message
+- `import_table(...)` aborts with `ValueError` when validation fails
+
+Example error payload:
+
+```python
+{"row": 12, "field": "year", "message": "Year level must be between 1 and 5."}
+```
+
+---
+
+## 💾 Backup & Restore
+
+- `backup_database(destination_path=None)` creates SQLite backups
+    - default location: `data/backups/sis_backup_YYYYMMDD_HHMMSS.db`
+- `restore_database(backup_path)` restores the DB from a backup
+- Both backup and restored DB files run `PRAGMA integrity_check`
 
 ### Program
 | Field | Rule |
@@ -129,20 +169,6 @@ python main.py
 |-------|------|
 | Code | Letters only — at least 2 characters, max 16, no duplicates |
 | Name | 5–128 characters, not numbers only |
-
----
-
-## 🗄 Soft-Delete Cascade
-
-When a college or program is deleted, dependent records are **not permanently broken** — they are prefixed with `__deleted__<code>` so they can be restored automatically when the college/program is re-added.
-
-```
-Delete college CCS  →  programs: college_code = "__deleted__CCS"
-                    →  students: program_code = "__deleted__BSCS"
-
-Re-add college CCS  →  programs: college_code = "CCS"  ✅ restored
-                    →  students: program_code = "BSCS"  ✅ restored
-```
 
 ---
 

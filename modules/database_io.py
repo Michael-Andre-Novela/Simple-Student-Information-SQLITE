@@ -1,11 +1,16 @@
 import sqlite3
 import csv
 import os
+import shutil
+import re
+import unicodedata
+from datetime import datetime
 
 MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(MODULE_DIR)
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 DB_PATH = os.path.join(DATA_DIR, "sis_database.db")
+BACKUP_DIR = os.path.join(DATA_DIR, "backups")
 
 ALLOWED_COLUMNS = {
     "students": {"id", "firstname", "lastname", "program_code", "year", "gender", "college"},
@@ -18,6 +23,44 @@ TABLE_COLUMNS = {
     "programs": ["code", "name", "college_code"],
     "colleges": ["code", "name"],
 }
+
+
+def _normalize_csv_headers(headers):
+    return {str(header).strip().lower() for header in headers if str(header).strip()}
+
+
+def detect_csv_table(filename):
+    with open(filename, newline="", encoding="utf-8") as csvfile:
+        reader = csv.DictReader(csvfile)
+        headers = _normalize_csv_headers(reader.fieldnames or [])
+
+    if not headers:
+        raise ValueError("CSV file has no headers.")
+
+    candidates = []
+    for table_name, columns in TABLE_COLUMNS.items():
+        required = {column.lower() for column in columns}
+        if required.issubset(headers):
+            candidates.append(table_name)
+
+    if not candidates:
+        raise ValueError(
+            "Could not detect CSV table type from headers. "
+            "Expected students, programs, or colleges format."
+        )
+
+    if len(candidates) > 1:
+        # Pick the most specific match (most required columns) to avoid ambiguity.
+        candidates.sort(key=lambda table: len(TABLE_COLUMNS[table]), reverse=True)
+        top_columns = len(TABLE_COLUMNS[candidates[0]])
+        top_candidates = [table for table in candidates if len(TABLE_COLUMNS[table]) == top_columns]
+        if len(top_candidates) > 1:
+            raise ValueError(
+                f"Ambiguous CSV headers match multiple tables: {', '.join(sorted(top_candidates))}"
+            )
+        return top_candidates[0]
+
+    return candidates[0]
 
 def get_connection():
     conn = sqlite3.connect(DB_PATH)
@@ -280,6 +323,7 @@ def add_student(id, fname, lname, p_code, year, gender):
         conn.commit()
     except sqlite3.IntegrityError:
         print("Error: Program code does not exist or Student ID is a duplicate.")
+        raise
     finally:
         conn.close()
 
@@ -296,6 +340,7 @@ def add_program(code, name, college_code):
 
     except sqlite3.IntegrityError:
         print("Error: Program code does not exist")
+        raise
     finally:
         conn.close()
 
@@ -311,6 +356,7 @@ def add_college(code, name):
         conn.commit()
     except sqlite3.IntegrityError:
         print("Error")
+        raise
     finally:
         conn.close()
 
@@ -331,6 +377,7 @@ def update_student(student_id, fname, lname, p_code, year, gender):
         conn.commit()
     except sqlite3.IntegrityError:
         print("Error")
+        raise
     finally:
         conn.close()
 
@@ -347,6 +394,7 @@ def update_program(code, name, college_code):
         conn.commit()
     except sqlite3.IntegrityError:
         print("ERROR!")
+        raise
 
     finally:
         conn.close()
@@ -363,6 +411,7 @@ def update_college(code, name):
         conn.commit()
     except sqlite3.IntegrityError:
         print("ERROR!")
+        raise
 
     finally:
         conn.close()
@@ -384,6 +433,7 @@ def delete_record(table_name, identifier):
         conn.commit()
     except sqlite3.IntegrityError:
         print("ERROR!")
+        raise
     finally:
         conn.close()
 def search(table_name, column, query):
@@ -445,6 +495,123 @@ def get_count(table_name, search_column=None, search_query=""):
     conn.close()
     return count
 
+
+def _infer_error_field(message):
+    msg = str(message).lower()
+    if "id" in msg:
+        return "id"
+    if "first name" in msg:
+        return "firstname"
+    if "last name" in msg:
+        return "lastname"
+    if "program code" in msg:
+        return "program_code"
+    if "college" in msg:
+        return "college_code"
+    if "year" in msg:
+        return "year"
+    if "gender" in msg:
+        return "gender"
+    if "code" in msg:
+        return "code"
+    if "name" in msg:
+        return "name"
+    return "row"
+
+
+def _normalize_row_for_table(table_name, row):
+    from modules import validators
+
+    if table_name == "students":
+        return validators.normalize_student_data(row)
+    if table_name == "programs":
+        return validators.normalize_program_data(row)
+    if table_name == "colleges":
+        return validators.normalize_college_data(row)
+    return row
+
+
+def _validate_row_for_table(table_name, row):
+    from modules import validators
+
+    if table_name == "students":
+        return validators.validate_student(
+            row,
+            skip_id_check=True,
+            skip_duplicate_profile_check=True,
+        )
+    if table_name == "programs":
+        return validators.validate_program(row, is_edit=True)
+    if table_name == "colleges":
+        return validators.validate_college(row, is_edit=True)
+    return False, "Unsupported table."
+
+
+def validate_csv_rows(table_name, filename):
+    _validate_table(table_name)
+    columns = TABLE_COLUMNS[table_name]
+    errors = []
+    normalized_rows = []
+
+    with open(filename, newline="", encoding="utf-8") as csvfile:
+        reader = csv.DictReader(csvfile)
+        fieldnames = reader.fieldnames or []
+        missing_columns = [column for column in columns if column not in fieldnames]
+        if missing_columns:
+            errors.append(
+                {
+                    "row": 1,
+                    "field": "header",
+                    "message": f"Missing required columns for {table_name}: {', '.join(missing_columns)}",
+                }
+            )
+            return False, errors, normalized_rows
+
+        seen_primary = set()
+        seen_student_profiles = set()
+        pk_field = "id" if table_name == "students" else "code"
+
+        for row_num, raw_row in enumerate(reader, start=2):
+            row = _normalize_row_for_table(table_name, raw_row)
+            normalized_rows.append(row)
+
+            is_valid, message = _validate_row_for_table(table_name, row)
+            if not is_valid:
+                errors.append({"row": row_num, "field": _infer_error_field(message), "message": message})
+                continue
+
+            pk_value = str(row.get(pk_field, "")).strip()
+            if pk_value in seen_primary:
+                errors.append(
+                    {
+                        "row": row_num,
+                        "field": pk_field,
+                        "message": f"Duplicate {pk_field} '{pk_value}' found in CSV.",
+                    }
+                )
+            else:
+                seen_primary.add(pk_value)
+
+            if table_name == "students":
+                profile_key = (
+                    row.get("firstname", ""),
+                    row.get("lastname", ""),
+                    row.get("program_code", ""),
+                    str(row.get("year", "")),
+                )
+                if profile_key in seen_student_profiles:
+                    errors.append(
+                        {
+                            "row": row_num,
+                            "field": "profile",
+                            "message": "Duplicate student profile in CSV (firstname, lastname, program_code, year).",
+                        }
+                    )
+                else:
+                    seen_student_profiles.add(profile_key)
+
+    return len(errors) == 0, errors, normalized_rows
+    
 def export_table(table_name, filename):
     _validate_table(table_name)
     conn = get_connection()
@@ -463,26 +630,192 @@ def export_table(table_name, filename):
     finally:
         conn.close()
 
+
+def backup_database(destination_path=None):
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+
+    if destination_path is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        destination_path = os.path.join(BACKUP_DIR, f"sis_backup_{timestamp}.db")
+
+    source_conn = get_connection()
+    backup_conn = sqlite3.connect(destination_path)
+    try:
+        source_conn.backup(backup_conn)
+        backup_conn.commit()
+    finally:
+        backup_conn.close()
+        source_conn.close()
+
+    return destination_path
+
+
+def restore_database(backup_path):
+    if not os.path.exists(backup_path):
+        raise FileNotFoundError(f"Backup file not found: {backup_path}")
+
+    backup_conn = sqlite3.connect(backup_path)
+    try:
+        integrity = backup_conn.execute("PRAGMA integrity_check").fetchone()[0]
+    finally:
+        backup_conn.close()
+
+    if integrity.lower() != "ok":
+        raise ValueError(f"Backup integrity check failed: {integrity}")
+
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    shutil.copy2(backup_path, DB_PATH)
+
+    restored_conn = get_connection()
+    try:
+        restored_integrity = restored_conn.execute("PRAGMA integrity_check").fetchone()[0]
+    finally:
+        restored_conn.close()
+
+    if restored_integrity.lower() != "ok":
+        raise ValueError(f"Restored database integrity check failed: {restored_integrity}")
+
+    return True
+
+
+def _sanitize_name_for_legacy(value):
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = re.sub(r"\s+", " ", text.strip())
+    text = re.sub(r"[^A-Za-z\s\-\',.]", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def cleanup_legacy_students(dry_run=True, fallback_program_code=None, max_details=25):
+    from modules import validators
+
+    if fallback_program_code is not None and not validators.program_exists(fallback_program_code):
+        raise ValueError(f"Fallback program code '{fallback_program_code}' does not exist.")
+
+    conn = get_connection()
+    updates = []
+
+    try:
+        rows = conn.execute(
+            "SELECT id, firstname, lastname, program_code, year, gender FROM students"
+        ).fetchall()
+
+        for row in rows:
+            student_id, firstname, lastname, program_code, year, gender = row
+            new_firstname = validators.normalize_name(firstname)
+            new_lastname = validators.normalize_name(lastname)
+            new_program_code = program_code
+            reasons = []
+
+            if validators._name_invalid(new_firstname):
+                sanitized = _sanitize_name_for_legacy(new_firstname)
+                if sanitized:
+                    new_firstname = validators.normalize_name(sanitized)
+                    reasons.append("firstname_sanitized")
+
+            if validators._name_invalid(new_lastname):
+                sanitized = _sanitize_name_for_legacy(new_lastname)
+                if sanitized:
+                    new_lastname = validators.normalize_name(sanitized)
+                    reasons.append("lastname_sanitized")
+
+            if (new_program_code is None or str(new_program_code).strip() == "") and fallback_program_code:
+                new_program_code = fallback_program_code
+                reasons.append("program_code_filled")
+
+            changed = (
+                new_firstname != firstname
+                or new_lastname != lastname
+                or new_program_code != program_code
+            )
+
+            if changed:
+                updates.append(
+                    {
+                        "id": student_id,
+                        "firstname_before": firstname,
+                        "firstname_after": new_firstname,
+                        "lastname_before": lastname,
+                        "lastname_after": new_lastname,
+                        "program_code_before": program_code,
+                        "program_code_after": new_program_code,
+                        "year": year,
+                        "gender": gender,
+                        "reasons": reasons,
+                    }
+                )
+
+        if not dry_run and updates:
+            conn.executemany(
+                """UPDATE students
+                   SET firstname = ?, lastname = ?, program_code = ?
+                   WHERE id = ?""",
+                [
+                    (
+                        item["firstname_after"],
+                        item["lastname_after"],
+                        item["program_code_after"],
+                        item["id"],
+                    )
+                    for item in updates
+                ],
+            )
+            conn.commit()
+
+        unresolved_blank_program_code = sum(
+            1
+            for row in rows
+            if row[3] is None or str(row[3]).strip() == ""
+        )
+        if fallback_program_code:
+            unresolved_blank_program_code = 0
+
+        return {
+            "dry_run": dry_run,
+            "total_students": len(rows),
+            "proposed_updates": len(updates),
+            "applied_updates": 0 if dry_run else len(updates),
+            "unresolved_blank_program_code": unresolved_blank_program_code,
+            "details": updates[:max_details],
+        }
+    finally:
+        conn.close()
+
 def import_table(table_name, filename):
     _validate_table(table_name)
     columns = TABLE_COLUMNS[table_name]
     placeholders = ",".join(["?"] * len(columns))
-    sql = f"INSERT OR REPLACE INTO {table_name} ({','.join(columns)}) VALUES ({placeholders})"
+    pk_field = "id" if table_name == "students" else "code"
+    updatable_columns = [column for column in columns if column != pk_field]
+    if updatable_columns:
+        update_clause = ", ".join([f"{column}=excluded.{column}" for column in updatable_columns])
+        sql = (
+            f"INSERT INTO {table_name} ({','.join(columns)}) VALUES ({placeholders}) "
+            f"ON CONFLICT({pk_field}) DO UPDATE SET {update_clause}"
+        )
+    else:
+        sql = (
+            f"INSERT INTO {table_name} ({','.join(columns)}) VALUES ({placeholders}) "
+            f"ON CONFLICT({pk_field}) DO NOTHING"
+        )
+
+    is_valid, errors, normalized_rows = validate_csv_rows(table_name, filename)
+    if not is_valid:
+        preview = "; ".join(
+            [f"row {e['row']} ({e['field']}): {e['message']}" for e in errors[:5]]
+        )
+        extra = "" if len(errors) <= 5 else f" ... and {len(errors) - 5} more"
+        raise ValueError(f"CSV validation failed: {preview}{extra}")
 
     conn = get_connection()
     inserted = 0
     try:
         cursor = conn.cursor()
-        with open(filename, newline="", encoding="utf-8") as csvfile:
-            reader = csv.DictReader(csvfile)
-            missing_columns = [column for column in columns if column not in (reader.fieldnames or [])]
-            if missing_columns:
-                raise ValueError(f"Missing required columns for {table_name}: {', '.join(missing_columns)}")
-
-            for row in reader:
-                values = [row[column] for column in columns]
-                cursor.execute(sql, values)
-                inserted += 1
+        for row in normalized_rows:
+            values = [row[column] for column in columns]
+            cursor.execute(sql, values)
+            inserted += 1
 
         conn.commit()
         return inserted

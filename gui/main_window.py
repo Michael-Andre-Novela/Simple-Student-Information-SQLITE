@@ -1,8 +1,24 @@
-from tkinter import ttk
+from tkinter import ttk, filedialog, messagebox
 import tkinter as tk
 import customtkinter as ctk
 import os
-from modules.database_io import get_all, get_one, delete_record, get_page, get_count
+import sys
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from modules.database_io import (
+    get_all,
+    get_one,
+    delete_record,
+    get_page,
+    get_count,
+    detect_csv_table,
+    import_table,
+    backup_database,
+    restore_database,
+)
 from gui.student_forms import open_student_form
 from gui.programs_forms import open_program_form
 from gui.college_forms import open_college_form
@@ -103,6 +119,52 @@ class MainWindow(ctk.CTk):
             btn.pack(fill="x", padx=12, pady=3)
             self.nav_buttons.append((btn, color))
 
+        ctk.CTkLabel(self.sidebar_frame, text="UTILITIES",
+                     font=ctk.CTkFont(size=10, weight="bold"),
+                     text_color=TEXT_MUTED).pack(anchor="w", padx=24, pady=(18, 8))
+
+        ctk.CTkButton(
+            self.sidebar_frame,
+            text="💾  Backup Database",
+            anchor="w",
+            font=ctk.CTkFont(size=13),
+            height=40,
+            corner_radius=10,
+            border_width=0,
+            fg_color="#1f2937",
+            hover_color="#273244",
+            text_color=TEXT_PRIMARY,
+            command=self._backup_database_action,
+        ).pack(fill="x", padx=12, pady=3)
+
+        ctk.CTkButton(
+            self.sidebar_frame,
+            text="↩  Restore Database",
+            anchor="w",
+            font=ctk.CTkFont(size=13),
+            height=40,
+            corner_radius=10,
+            border_width=0,
+            fg_color="#3b1d22",
+            hover_color="#4a2430",
+            text_color=TEXT_PRIMARY,
+            command=self._restore_database_action,
+        ).pack(fill="x", padx=12, pady=3)
+
+        ctk.CTkButton(
+            self.sidebar_frame,
+            text="📥  Import CSV",
+            anchor="w",
+            font=ctk.CTkFont(size=13),
+            height=40,
+            corner_radius=10,
+            border_width=0,
+            fg_color="#1f3a2a",
+            hover_color="#244934",
+            text_color=TEXT_PRIMARY,
+            command=self._import_csv_action,
+        ).pack(fill="x", padx=12, pady=3)
+
         self._bottom_logo_img = ctk.CTkImage(
             Image.open(self.asset_logo_path), size=(120, 120)
         )
@@ -121,6 +183,81 @@ class MainWindow(ctk.CTk):
                 btn.configure(fg_color="transparent", text_color=TEXT_PRIMARY,
                               border_width=0)
 
+    def _backup_database_action(self):
+        try:
+            backup_path = backup_database()
+            self.set_status(f"Backup created: {backup_path}", color=ACCENT_GREEN)
+            messagebox.showinfo(
+                "Backup Complete",
+                f"Database backup created successfully:\n{backup_path}",
+            )
+        except Exception as exc:
+            self.set_status(f"Backup failed: {exc}", color=ACCENT_RED)
+            messagebox.showerror("Backup Failed", str(exc))
+
+    def _restore_database_action(self):
+        backup_path = filedialog.askopenfilename(
+            title="Select database backup",
+            filetypes=[("SQLite Database", "*.db *.sqlite *.sqlite3"), ("All Files", "*.*")],
+        )
+        if not backup_path:
+            return
+
+        if not messagebox.askyesno(
+            "Confirm Restore",
+            "This will replace the current database with the selected backup. Continue?",
+        ):
+            return
+
+        try:
+            restore_database(backup_path)
+            self.set_status("Database restored successfully.", color=ACCENT_GREEN)
+            messagebox.showinfo("Restore Complete", "Database restored successfully.")
+            self.current_page = 1
+            self.refresh_table(self.current_display_keys)
+        except Exception as exc:
+            self.set_status(f"Restore failed: {exc}", color=ACCENT_RED)
+            messagebox.showerror("Restore Failed", str(exc))
+
+    def _import_csv_action(self):
+        csv_path = filedialog.askopenfilename(
+            title="Select CSV to import",
+            filetypes=[("CSV Files", "*.csv"), ("All Files", "*.*")],
+        )
+        if not csv_path:
+            return
+
+        try:
+            table_name = detect_csv_table(csv_path)
+            if not messagebox.askyesno(
+                "Confirm Import",
+                f"Detected '{table_name}' from the selected CSV.\n\nImport this file now?",
+            ):
+                self.set_status("CSV import canceled.", color=TEXT_MUTED)
+                return
+
+            imported = import_table(table_name, csv_path)
+            self.set_status(
+                f"Imported {imported} row(s) into {table_name} from CSV.",
+                color=ACCENT_GREEN,
+            )
+            messagebox.showinfo(
+                "Import Complete",
+                f"Detected '{table_name}' and imported {imported} row(s).",
+            )
+            self.current_page = 1
+            self.refresh_table(self.current_display_keys)
+        except Exception as exc:
+            self.set_status(f"Import failed: {exc}", color=ACCENT_RED)
+            messagebox.showerror("Import Failed", str(exc))
+
+    def set_status(self, message, color=TEXT_MUTED):
+        if hasattr(self, "status_label") and self.status_label.winfo_exists():
+            self.status_label.configure(text=message, text_color=color)
+
+    def clear_status(self):
+        self.set_status("")
+
     # ************************************ Content Frame ************************************
     def _build_content_frame(self):
         self.content_frame = ctk.CTkFrame(self, corner_radius=16,
@@ -132,6 +269,7 @@ class MainWindow(ctk.CTk):
         self.content_frame.grid_rowconfigure(2, weight=0)
         self.content_frame.grid_rowconfigure(3, weight=1)
         self.content_frame.grid_rowconfigure(4, weight=0)
+        self.content_frame.grid_rowconfigure(5, weight=0)
 
     def clear_content(self):
         self.close_active_menu()
@@ -143,6 +281,7 @@ class MainWindow(ctk.CTk):
         self.content_frame.grid_rowconfigure(2, weight=0)
         self.content_frame.grid_rowconfigure(3, weight=1)
         self.content_frame.grid_rowconfigure(4, weight=0)
+        self.content_frame.grid_rowconfigure(5, weight=0)
 
     def close_active_menu(self, event=None):
         if hasattr(self, 'active_menu'):
@@ -158,6 +297,7 @@ class MainWindow(ctk.CTk):
     def create_common_controls(self, title, accent, search_options, sort_options,
                                file_key, display_keys, add_command=None):
         self.clear_content()
+        self.clear_status()
 
         # Row 0 — header
         header = ctk.CTkFrame(self.content_frame, fg_color="transparent")
@@ -258,6 +398,17 @@ class MainWindow(ctk.CTk):
 
         ctk.CTkLabel(ctrl, text="Sort by:", font=ctk.CTkFont(size=12),
                      text_color=TEXT_MUTED).pack(side="right", padx=(0, 4))
+
+        self.status_label = ctk.CTkLabel(
+            self.content_frame,
+            text="",
+            font=ctk.CTkFont(size=11),
+            text_color=TEXT_MUTED,
+            fg_color="#21262d",
+            corner_radius=8,
+            anchor="w",
+        )
+        self.status_label.grid(row=5, column=0, sticky="ew", padx=24, pady=(0, 14))
 
     def _toggle_order(self, file_key, sort_options, display_keys):
         #Toggle between ascending and descending, then re-sort.

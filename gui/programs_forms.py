@@ -66,11 +66,14 @@ def handle_delete(app, edit_data):
     bf.pack(pady=20)
 
     def confirm_delete():
-        delete_record('programs', code)
-
-        app.current_data = get_all(app.current_file_key)
-        app.refresh_table(app.current_display_keys)
-        confirm.destroy()
+        try:
+            delete_record('programs', code)
+            app.current_data = get_all(app.current_file_key)
+            app.refresh_table(app.current_display_keys)
+            app.set_status(f"Program {code} deleted successfully.", color=ACCENT_GREEN)
+            confirm.destroy()
+        except Exception as exc:
+            app.set_status(f"Failed to delete program {code}: {exc}", color=ACCENT_RED)
 
     ctk.CTkButton(bf, text="Yes, Delete", fg_color=ACCENT_RED,
                   hover_color="#b91c1c", width=120, height=36,
@@ -84,13 +87,14 @@ def open_program_form(app, edit_data=None):
 
     form = ctk.CTkToplevel(app)
     form.title("Edit Program" if is_edit else "Add Program")
-    form.resizable(False, False)
+    form.resizable(True, True)
     form.configure(fg_color=BG_FORM)
     form.attributes("-topmost", True)
     _w, _h = 420, 440
     _x = (form.winfo_screenwidth()  - _w) // 2
     _y = (form.winfo_screenheight() - _h) // 2
     form.geometry(f"{_w}x{_h}+{_x}+{_y}")
+    form.minsize(420, 440)
     form.after(100, form.grab_set)
 
     # Header
@@ -143,17 +147,25 @@ def open_program_form(app, edit_data=None):
 
         is_valid, msg = validate_program(program_data, is_edit=is_edit)
         if not is_valid:
+            app.set_status(msg, color=ACCENT_RED)
             error_label.configure(text=msg)
             return
 
-        if is_edit:
-            update_program(program_data["code"], program_data["name"], program_data["college_code"])
-        else:
-           add_program(program_data["code"], program_data["name"], program_data["college_code"])
+        try:
+            if is_edit:
+                update_program(program_data["code"], program_data["name"], program_data["college_code"])
+                success_message = f"Program {program_data['code']} updated successfully."
+            else:
+                add_program(program_data["code"], program_data["name"], program_data["college_code"])
+                success_message = f"Program {program_data['code']} added successfully."
 
-        app.current_data = get_all("programs")
-        app.refresh_table(app.current_display_keys)
-        form.destroy()
+            app.current_data = get_all("programs")
+            app.refresh_table(app.current_display_keys)
+            app.set_status(success_message, color=ACCENT_GREEN)
+            form.destroy()
+        except Exception as exc:
+            app.set_status(f"Failed to save program: {exc}", color=ACCENT_RED)
+            error_label.configure(text=str(exc))
 
 
     btn_row = ctk.CTkFrame(body, fg_color="transparent")

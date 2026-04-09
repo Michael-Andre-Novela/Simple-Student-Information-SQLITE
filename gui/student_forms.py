@@ -62,10 +62,14 @@ def handle_delete(app, edit_data):
     bf.pack(pady=20)
 
     def confirm_delete():
-        delete_record("students", str(edit_data[0]))
-        app.current_data = get_all(app.current_file_key)
-        app.refresh_table(app.current_display_keys)
-        confirm.destroy()
+        try:
+            delete_record("students", str(edit_data[0]))
+            app.current_data = get_all(app.current_file_key)
+            app.refresh_table(app.current_display_keys)
+            app.set_status(f"Student {edit_data[0]} deleted successfully.", color=ACCENT_GREEN)
+            confirm.destroy()
+        except Exception as exc:
+            app.set_status(f"Failed to delete student {edit_data[0]}: {exc}", color=ACCENT_RED)
 
     ctk.CTkButton(bf, text="Yes, Delete", fg_color=ACCENT_RED,
                   hover_color="#b91c1c", width=120, height=36,
@@ -79,13 +83,14 @@ def open_student_form(app, edit_data=None):
 
     form = ctk.CTkToplevel(app)
     form.title("Edit Student" if is_edit else "Add Student")
-    form.resizable(False, False)
+    form.resizable(True, True)
     form.configure(fg_color=BG_FORM)
     form.attributes("-topmost", True)
     _w, _h = 420, 700
     _x = (form.winfo_screenwidth()  - _w) // 2
     _y = (form.winfo_screenheight() - _h) // 2
     form.geometry(f"{_w}x{_h}+{_x}+{_y}")
+    form.minsize(420, 700)
     form.after(100, form.grab_set)
 
     # Header
@@ -190,25 +195,34 @@ def open_student_form(app, edit_data=None):
         
         is_valid, *msg = validate_student(student_data, skip_id_check=is_edit)
         if not is_valid:
-            error_label.configure(text=msg[0] if msg else "Invalid input.")
+            message = msg[0] if msg else "Invalid input."
+            error_label.configure(text=message)
+            app.set_status(message, color=ACCENT_RED)
             return
-        
-        if is_edit:
-            update_student(student_data["id"],student_data["firstname"],
-                          student_data["lastname"],
-                          student_data["program_code"],
-                          student_data["year"],
-                          student_data["gender"])
-        else:
-            add_student(student_data["id"],student_data["firstname"],
-                          student_data["lastname"],
-                          student_data["program_code"],
-                          student_data["year"],
-                          student_data["gender"])
-      
-        app.current_data = get_all("students")
-        app.refresh_table(app.current_display_keys)
-        form.destroy()
+
+        try:
+            if is_edit:
+                update_student(student_data["id"], student_data["firstname"],
+                               student_data["lastname"],
+                               student_data["program_code"],
+                               student_data["year"],
+                               student_data["gender"])
+                success_message = f"Student {student_data['id']} updated successfully."
+            else:
+                add_student(student_data["id"], student_data["firstname"],
+                            student_data["lastname"],
+                            student_data["program_code"],
+                            student_data["year"],
+                            student_data["gender"])
+                success_message = f"Student {student_data['id']} added successfully."
+
+            app.current_data = get_all("students")
+            app.refresh_table(app.current_display_keys)
+            app.set_status(success_message, color=ACCENT_GREEN)
+            form.destroy()
+        except Exception as exc:
+            app.set_status(f"Failed to save student: {exc}", color=ACCENT_RED)
+            error_label.configure(text=str(exc))
 
 
     # Buttons

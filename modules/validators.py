@@ -105,7 +105,7 @@ def college_code_exists(code):
 
 # ── Student Validator ──────────────────────────────────────────────────────
 
-def validate_student(student_data, skip_id_check=False):
+def validate_student(student_data, skip_id_check=False, skip_duplicate_profile_check=False):
     student_data = normalize_student_data(student_data)
     current_year = datetime.now().year
 
@@ -177,9 +177,10 @@ def validate_student(student_data, skip_id_check=False):
             return False, f"ID '{sid}' already exists."
 
     # 10. Duplicate student profile check
-    exclude_id = sid if skip_id_check else None
-    if student_duplicate_exists(firstname, lastname, program, year_int, exclude_id=exclude_id):
-        return False, "A student with the same name, program, and year already exists."
+    if not skip_duplicate_profile_check:
+        exclude_id = sid if skip_id_check else None
+        if student_duplicate_exists(firstname, lastname, program, year_int, exclude_id=exclude_id):
+            return False, "A student with the same name, program, and year already exists."
 
     return True, "Valid."
 
