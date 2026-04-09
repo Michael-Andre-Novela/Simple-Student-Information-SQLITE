@@ -2,7 +2,7 @@ import customtkinter as ctk
 from PIL import Image
 import os
 from modules.database_io import add_college, update_college, delete_record, get_all
-from modules.validators import validate_college
+from modules.validators import normalize_college_data, validate_college
 
 BG_BASE      = "#0d1117"
 BG_FORM      = "#1c2230"
@@ -125,6 +125,7 @@ def open_college_form(app, edit_data=None):
         code = str(edit_data[0]) if is_edit else code_entry.get().strip().upper()
         name = name_entry.get().strip()
         college_data = {"code": code, "name": name}
+        college_data = normalize_college_data(college_data)
 
         is_valid, msg = validate_college(college_data, is_edit=is_edit)
         if not is_valid:
@@ -132,9 +133,9 @@ def open_college_form(app, edit_data=None):
             return
         
         if is_edit:
-            update_college(code,name)
+            update_college(college_data["code"], college_data["name"])
         else:
-            add_college(code,name)
+            add_college(college_data["code"], college_data["name"])
             
         
         app.current_data = get_all("colleges")

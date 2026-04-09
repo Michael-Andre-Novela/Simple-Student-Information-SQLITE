@@ -2,7 +2,7 @@ import customtkinter as ctk
 from PIL import Image
 import os
 from modules.database_io import add_student, update_student, delete_record, get_all, get_one
-from modules.validators import validate_student
+from modules.validators import normalize_student_data, validate_student
 
 # Palette
 BG_BASE     = "#0d1117"
@@ -186,6 +186,7 @@ def open_student_form(app, edit_data=None):
             "year":         year_var.get(),
             "gender":       gender_var.get()
         }
+        student_data = normalize_student_data(student_data)
         
         is_valid, *msg = validate_student(student_data, skip_id_check=is_edit)
         if not is_valid:

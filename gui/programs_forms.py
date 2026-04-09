@@ -2,7 +2,7 @@ import customtkinter as ctk
 from PIL import Image
 import os
 from modules.database_io import add_program, update_program, delete_record, get_all
-from modules.validators import validate_program
+from modules.validators import normalize_program_data, validate_program
 
 BG_BASE     = "#0d1117"
 BG_FORM     = "#1c2230"
@@ -139,6 +139,7 @@ def open_program_form(app, edit_data=None):
         code = str(edit_data[0]) if is_edit else code_entry.get().strip().upper()
         name = name_entry.get().strip()
         program_data = {"code": code, "name": name, "college_code": college_var.get()}
+        program_data = normalize_program_data(program_data)
 
         is_valid, msg = validate_program(program_data, is_edit=is_edit)
         if not is_valid:
@@ -146,9 +147,9 @@ def open_program_form(app, edit_data=None):
             return
 
         if is_edit:
-            update_program(code, name, college_var.get())
+            update_program(program_data["code"], program_data["name"], program_data["college_code"])
         else:
-           add_program(code,name, college_var.get())
+           add_program(program_data["code"], program_data["name"], program_data["college_code"])
 
         app.current_data = get_all("programs")
         app.refresh_table(app.current_display_keys)

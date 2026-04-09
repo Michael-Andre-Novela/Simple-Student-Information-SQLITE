@@ -1,8 +1,11 @@
 import re
 from datetime import datetime
-from modules.database_io import get_one
+from modules.database_io import get_connection, get_one
 
 MIN_YEAR = 2000  # Earliest valid enrollment year
+MIN_YEAR_LEVEL = 1
+MAX_YEAR_LEVEL = 5
+ALLOWED_GENDERS = ("Male", "Female", "Other")
 ROMAN_NUMERAL_RE = re.compile(
     r"^(?=[MDCLXVI]+$)M{0,4}(CM|CD|D?C{0,3})"
     r"(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$"
@@ -13,6 +16,43 @@ ROMAN_NUMERAL_RE = re.compile(
 
 def is_blank(value):
     return not str(value).strip()
+
+
+def _normalize_spaces(value):
+    return re.sub(r"\s+", " ", str(value or "").strip())
+
+
+def normalize_name(value):
+    text = _normalize_spaces(value)
+    if not text:
+        return ""
+    return " ".join(part[:1].upper() + part[1:] for part in text.split(" "))
+
+
+def normalize_student_data(student_data):
+    return {
+        "id": _normalize_spaces(student_data.get("id", "")),
+        "firstname": normalize_name(student_data.get("firstname", "")),
+        "lastname": normalize_name(student_data.get("lastname", "")),
+        "program_code": _normalize_spaces(student_data.get("program_code", "")),
+        "year": _normalize_spaces(student_data.get("year", "")),
+        "gender": _normalize_spaces(student_data.get("gender", "")).title(),
+    }
+
+
+def normalize_program_data(program_data):
+    return {
+        "code": _normalize_spaces(program_data.get("code", "")),
+        "name": _normalize_spaces(program_data.get("name", "")),
+        "college_code": _normalize_spaces(program_data.get("college_code", "")),
+    }
+
+
+def normalize_college_data(college_data):
+    return {
+        "code": _normalize_spaces(college_data.get("code", "")),
+        "name": _normalize_spaces(college_data.get("name", "")),
+    }
 
 def _name_invalid(value):
     """Returns True if a name contains characters outside what is allowed.
@@ -32,6 +72,24 @@ def _name_invalid(value):
 def id_already_exists(id_number):
     return get_one("students", id_number) is not None
 
+
+def student_duplicate_exists(firstname, lastname, program_code, year, exclude_id=None):
+    conn = get_connection()
+    try:
+        sql = (
+            "SELECT id FROM students "
+            "WHERE firstname = ? AND lastname = ? AND program_code = ? AND year = ?"
+        )
+        params = [firstname, lastname, program_code, int(year)]
+        if exclude_id:
+            sql += " AND id != ?"
+            params.append(exclude_id)
+
+        row = conn.execute(sql, params).fetchone()
+        return row is not None
+    finally:
+        conn.close()
+
 def program_exists(program_code):
     return get_one("programs", program_code) is not None
 
@@ -48,14 +106,15 @@ def college_code_exists(code):
 # ── Student Validator ──────────────────────────────────────────────────────
 
 def validate_student(student_data, skip_id_check=False):
+    student_data = normalize_student_data(student_data)
     current_year = datetime.now().year
 
-    sid       = str(student_data.get('id', '')).strip()
-    firstname = str(student_data.get('firstname', '')).strip()
-    lastname  = str(student_data.get('lastname', '')).strip()
-    program   = str(student_data.get('program_code', '')).strip()
-    year      = str(student_data.get('year', '')).strip()
-    gender    = str(student_data.get('gender', '')).strip()
+    sid = student_data["id"]
+    firstname = student_data["firstname"]
+    lastname = student_data["lastname"]
+    program = student_data["program_code"]
+    year = student_data["year"]
+    gender = student_data["gender"]
 
     # 1. ID format: YYYY-NNNN
     if not re.match(r'^\d{4}-\d{4}$', sid):
@@ -93,13 +152,13 @@ def validate_student(student_data, skip_id_check=False):
         return False, "Year level cannot be empty."
     try:
         year_int = int(year)
-        if not (1 <= year_int <= 4):
-            return False, "Year level must be between 1 and 4."
+        if not (MIN_YEAR_LEVEL <= year_int <= MAX_YEAR_LEVEL):
+            return False, f"Year level must be between {MIN_YEAR_LEVEL} and {MAX_YEAR_LEVEL}."
     except ValueError:
         return False, "Year level must be a number."
 
     # 6. Gender
-    if gender not in ("Male", "Female", "Other"):
+    if gender not in ALLOWED_GENDERS:
         return False, "Gender must be Male, Female, or Other."
 
     # 7. Program code exists
@@ -117,15 +176,21 @@ def validate_student(student_data, skip_id_check=False):
         if id_already_exists(sid):
             return False, f"ID '{sid}' already exists."
 
+    # 10. Duplicate student profile check
+    exclude_id = sid if skip_id_check else None
+    if student_duplicate_exists(firstname, lastname, program, year_int, exclude_id=exclude_id):
+        return False, "A student with the same name, program, and year already exists."
+
     return True, "Valid."
 
 
 # ── Program Validator ──────────────────────────────────────────────────────
 
 def validate_program(program_data, is_edit=False):
-    code    = str(program_data.get('code', '')).strip()
-    name    = str(program_data.get('name', '')).strip()
-    college = str(program_data.get('college_code', '')).strip()
+    program_data = normalize_program_data(program_data)
+    code = program_data["code"]
+    name = program_data["name"]
+    college = program_data["college_code"]
 
     # 1. Code empty
     if is_blank(code):
@@ -170,8 +235,9 @@ def validate_program(program_data, is_edit=False):
 # ── College Validator ──────────────────────────────────────────────────────
 
 def validate_college(college_data, is_edit=False):
-    code = str(college_data.get('code', '')).strip()
-    name = str(college_data.get('name', '')).strip()
+    college_data = normalize_college_data(college_data)
+    code = college_data["code"]
+    name = college_data["name"]
 
     # 1. Code empty
     if is_blank(code):
