@@ -121,7 +121,7 @@ def db_initialization():
               name TEXT,
               college_code TEXT,
               FOREIGN KEY (college_code) REFERENCES colleges(code)
-              ON DELETE CASCADE
+              ON DELETE SET NULL
               )""")
 
     # 3. Bottom Level: Students (References Programs)
@@ -137,6 +137,52 @@ def db_initialization():
               )""")
     conn.commit()
     conn.close()
+
+    ensure_programs_fk_set_null()
+
+
+def ensure_programs_fk_set_null():
+    """One-time migration: make programs.college_code use ON DELETE SET NULL."""
+    conn = get_connection()
+    c = conn.cursor()
+
+    fk_rows = c.execute("PRAGMA foreign_key_list(programs)").fetchall()
+    program_fk = None
+    for fk in fk_rows:
+        if fk[3] == "college_code" and fk[2] == "colleges":
+            program_fk = fk
+            break
+
+    on_delete_action = (program_fk[6] if program_fk else "").upper()
+    if on_delete_action == "SET NULL":
+        conn.close()
+        return
+
+    c.execute("PRAGMA foreign_keys = OFF")
+    c.execute("BEGIN")
+    try:
+        c.execute("ALTER TABLE programs RENAME TO programs_old")
+
+        c.execute("""CREATE TABLE programs(
+              code TEXT PRIMARY KEY,
+              name TEXT,
+              college_code TEXT,
+              FOREIGN KEY (college_code) REFERENCES colleges(code)
+              ON DELETE SET NULL
+              )""")
+
+        c.execute("""INSERT INTO programs(code, name, college_code)
+                     SELECT code, name, college_code
+                     FROM programs_old""")
+
+        c.execute("DROP TABLE programs_old")
+        c.execute("COMMIT")
+    except Exception:
+        c.execute("ROLLBACK")
+        raise
+    finally:
+        c.execute("PRAGMA foreign_keys = ON")
+        conn.close()
 
 #*********************create***************************************
 def add_student(id, fname, lname, p_code, year, gender):
