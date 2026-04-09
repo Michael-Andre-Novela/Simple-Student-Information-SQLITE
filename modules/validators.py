@@ -3,6 +3,10 @@ from datetime import datetime
 from modules.database_io import get_one
 
 MIN_YEAR = 2000  # Earliest valid enrollment year
+ROMAN_NUMERAL_RE = re.compile(
+    r"^(?=[MDCLXVI]+$)M{0,4}(CM|CD|D?C{0,3})"
+    r"(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$"
+)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -12,10 +16,18 @@ def is_blank(value):
 
 def _name_invalid(value):
     """Returns True if a name contains characters outside what is allowed.
-    Permits: letters, spaces, hyphens, apostrophes, periods.
-    Covers names like O'Brien, De La Cruz, Mary-Jane, Jr.
+    Permits: alphabetic words, spaces, Roman numerals, and common punctuation
+    such as hyphens, apostrophes, commas, and periods.
+    Covers names like Juan Dela Cruz II, Maria IV, O'Brien, and Mary-Jane.
     """
-    return not re.match(r"^[a-zA-Z\s\-\.']+$", str(value).strip())
+    text = str(value).strip()
+    if not text:
+        return True
+
+    if re.search(r"\d", text):
+        return True
+
+    return not re.fullmatch(r"[A-Za-z\s\-\',.]+", text)
 
 def id_already_exists(id_number):
     return get_one("students", id_number) is not None
@@ -64,7 +76,7 @@ def validate_student(student_data, skip_id_check=False):
     if len(firstname) > 64:
         return False, "First name must be under 64 characters."
     if _name_invalid(firstname):
-        return False, "First name can only contain letters, spaces, hyphens, apostrophes, or periods."
+        return False, "First name can only contain letters, spaces, Roman numerals, hyphens, apostrophes, commas, and periods."
 
     # 4. Last name checks
     if is_blank(lastname):
@@ -74,7 +86,7 @@ def validate_student(student_data, skip_id_check=False):
     if len(lastname) > 64:
         return False, "Last name must be under 64 characters."
     if _name_invalid(lastname):
-        return False, "Last name can only contain letters, spaces, hyphens, apostrophes, or periods."
+        return False, "Last name can only contain letters, spaces, Roman numerals, hyphens, apostrophes, commas, and periods."
 
     # 5. Year level
     if is_blank(year):

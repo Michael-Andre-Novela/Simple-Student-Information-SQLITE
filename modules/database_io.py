@@ -13,6 +13,12 @@ ALLOWED_COLUMNS = {
     "colleges": {"code", "name"},
 }
 
+TABLE_COLUMNS = {
+    "students": ["id", "firstname", "lastname", "program_code", "year", "gender"],
+    "programs": ["code", "name", "college_code"],
+    "colleges": ["code", "name"],
+}
+
 def get_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA foreign_keys = ON;")
@@ -60,7 +66,7 @@ def _build_order_clause(table_name, order_by, reverse):
     return f" ORDER BY {order_expr} {'DESC' if reverse else 'ASC'}"
 
 def migration():
-    """"read existing csv  """
+    """"read existing csv in case no contents in the database """
     conn = get_connection()
     c = conn.cursor()
 
@@ -111,38 +117,49 @@ def db_initialization():
 
     # 1. Top Level: Colleges
     c.execute(""" CREATE TABLE IF NOT EXISTS colleges(
-              code TEXT PRIMARY KEY,
-              name TEXT
+              code TEXT PRIMARY KEY CHECK (code IN ('CCS','CED','CHS','COE','CEBA','CASS','CSM')),
+              name TEXT NOT NULL,
+              UNIQUE(name)
               )""")
     
     # 2. Mid Level: Programs (References Colleges)
     c.execute(""" CREATE TABLE IF NOT EXISTS programs(
               code TEXT PRIMARY KEY,
-              name TEXT,
+              name TEXT NOT NULL,
               college_code TEXT,
               FOREIGN KEY (college_code) REFERENCES colleges(code)
-              ON DELETE SET NULL
+              ON DELETE SET NULL,
+              UNIQUE(name,college_code)
               )""")
 
     # 3. Bottom Level: Students (References Programs)
     c.execute(""" CREATE TABLE IF NOT EXISTS students(
               id TEXT PRIMARY KEY,
-              firstname TEXT,
-              lastname TEXT,
+              firstname TEXT NOT NULL,
+              lastname TEXT NOT NULL,
               program_code TEXT,
-              year TEXT,
-              gender TEXT,
-              FOREIGN KEY (program_code) REFERENCES programs(code)
-              ON DELETE SET NULL
+              year INTEGER NOT NULL CHECK (year BETWEEN 1 AND 5),
+              gender TEXT NOT NULL CHECK (gender IN ('Male','Female','Other')),
+              FOREIGN KEY (program_code) REFERENCES programs(code) ON DELETE SET NULL,
+              CHECK (id GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]')
               )""")
     conn.commit()
     conn.close()
 
-    ensure_programs_fk_set_null()
+    ensure_programs_constraints()
+    ensure_students_constraints()
 
 
-def ensure_programs_fk_set_null():
-    """One-time migration: make programs.college_code use ON DELETE SET NULL."""
+def _get_table_sql(c, table_name):
+    row = c.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name=?",
+        (table_name,),
+    ).fetchone()
+    return row[0] if row and row[0] else ""
+
+
+def ensure_programs_constraints():
+    """One-time migration: align programs schema with ON DELETE SET NULL and nullable FK."""
     conn = get_connection()
     c = conn.cursor()
 
@@ -154,7 +171,13 @@ def ensure_programs_fk_set_null():
             break
 
     on_delete_action = (program_fk[6] if program_fk else "").upper()
-    if on_delete_action == "SET NULL":
+    table_info = c.execute("PRAGMA table_info(programs)").fetchall()
+    college_column = next((row for row in table_info if row[1] == "college_code"), None)
+    college_not_null = bool(college_column and college_column[3] == 1)
+    table_sql = _get_table_sql(c, "programs").lower()
+    has_unique_name_college = "unique(name,college_code)" in table_sql.replace(" ", "")
+
+    if on_delete_action == "SET NULL" and not college_not_null and has_unique_name_college:
         conn.close()
         return
 
@@ -165,10 +188,11 @@ def ensure_programs_fk_set_null():
 
         c.execute("""CREATE TABLE programs(
               code TEXT PRIMARY KEY,
-              name TEXT,
+              name TEXT NOT NULL,
               college_code TEXT,
               FOREIGN KEY (college_code) REFERENCES colleges(code)
-              ON DELETE SET NULL
+              ON DELETE SET NULL,
+              UNIQUE(name,college_code)
               )""")
 
         c.execute("""INSERT INTO programs(code, name, college_code)
@@ -176,6 +200,66 @@ def ensure_programs_fk_set_null():
                      FROM programs_old""")
 
         c.execute("DROP TABLE programs_old")
+        c.execute("COMMIT")
+    except Exception:
+        c.execute("ROLLBACK")
+        raise
+    finally:
+        c.execute("PRAGMA foreign_keys = ON")
+        conn.close()
+
+
+def ensure_students_constraints():
+    """One-time migration: align students schema checks and nullable FK with ON DELETE SET NULL."""
+    conn = get_connection()
+    c = conn.cursor()
+
+    fk_rows = c.execute("PRAGMA foreign_key_list(students)").fetchall()
+    student_fk = None
+    for fk in fk_rows:
+        if fk[3] == "program_code" and fk[2] == "programs":
+            student_fk = fk
+            break
+
+    on_delete_action = (student_fk[6] if student_fk else "").upper()
+    table_info = c.execute("PRAGMA table_info(students)").fetchall()
+    program_column = next((row for row in table_info if row[1] == "program_code"), None)
+    program_not_null = bool(program_column and program_column[3] == 1)
+    table_sql = _get_table_sql(c, "students").lower().replace(" ", "")
+    has_year_check = "check(yearbetween1and5)" in table_sql
+    has_gender_check = "check(genderin('male','female','other'))" in table_sql
+    has_id_check = "check(idglob'[0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]')" in table_sql
+
+    if (
+        on_delete_action == "SET NULL"
+        and not program_not_null
+        and has_year_check
+        and has_gender_check
+        and has_id_check
+    ):
+        conn.close()
+        return
+
+    c.execute("PRAGMA foreign_keys = OFF")
+    c.execute("BEGIN")
+    try:
+        c.execute("ALTER TABLE students RENAME TO students_old")
+
+        c.execute("""CREATE TABLE students(
+              id TEXT PRIMARY KEY CHECK (id GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]'),
+              firstname TEXT NOT NULL,
+              lastname TEXT NOT NULL,
+              program_code TEXT,
+              year INTEGER NOT NULL CHECK (year BETWEEN 1 AND 5),
+              gender TEXT NOT NULL CHECK (gender IN ('Male','Female','Other')),
+              FOREIGN KEY (program_code) REFERENCES programs(code) ON DELETE SET NULL
+              )""")
+
+        c.execute("""INSERT INTO students(id, firstname, lastname, program_code, year, gender)
+                     SELECT id, firstname, lastname, program_code, CAST(year AS INTEGER), gender
+                     FROM students_old""")
+
+        c.execute("DROP TABLE students_old")
         c.execute("COMMIT")
     except Exception:
         c.execute("ROLLBACK")
@@ -360,5 +444,51 @@ def get_count(table_name, search_column=None, search_query=""):
     count = conn.execute(sql, where_params).fetchone()[0]
     conn.close()
     return count
+
+def export_table(table_name, filename):
+    _validate_table(table_name)
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(f"SELECT * FROM {table_name}")
+        rows = cursor.fetchall()
+        headers = [column[0] for column in cursor.description]
+
+        with open(filename, "w", newline="", encoding="utf-8") as csvfile:
+            csv_writer = csv.writer(csvfile)
+            csv_writer.writerow(headers)
+            csv_writer.writerows(rows)
+
+        return len(rows)
+    finally:
+        conn.close()
+
+def import_table(table_name, filename):
+    _validate_table(table_name)
+    columns = TABLE_COLUMNS[table_name]
+    placeholders = ",".join(["?"] * len(columns))
+    sql = f"INSERT OR REPLACE INTO {table_name} ({','.join(columns)}) VALUES ({placeholders})"
+
+    conn = get_connection()
+    inserted = 0
+    try:
+        cursor = conn.cursor()
+        with open(filename, newline="", encoding="utf-8") as csvfile:
+            reader = csv.DictReader(csvfile)
+            missing_columns = [column for column in columns if column not in (reader.fieldnames or [])]
+            if missing_columns:
+                raise ValueError(f"Missing required columns for {table_name}: {', '.join(missing_columns)}")
+
+            for row in reader:
+                values = [row[column] for column in columns]
+                cursor.execute(sql, values)
+                inserted += 1
+
+        conn.commit()
+        return inserted
+    finally:
+        conn.close()
+
+
 
 db_initialization()
