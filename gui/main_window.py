@@ -199,17 +199,9 @@ class MainWindow(ctk.CTk):
             messagebox.showerror("Backup Failed", str(exc))
 
     def _restore_database_action(self):
-        backup_path = filedialog.askopenfilename(
-            title="Select database backup",
-            filetypes=[("SQLite Database", "*.db *.sqlite *.sqlite3"), ("All Files", "*.*")],
-        )
+        backup_path = self._show_restore_database_dialog()
         if not backup_path:
-            return
-
-        if not messagebox.askyesno(
-            "Confirm Restore",
-            "This will replace the current database with the selected backup. Continue?",
-        ):
+            self.set_status("Restore canceled.", color=TEXT_MUTED)
             return
 
         try:
@@ -224,8 +216,8 @@ class MainWindow(ctk.CTk):
 
     def _build_import_preview_details(self, table_name, is_valid, errors, normalized_rows, diff_summary=None):
         preview_fields = {
-            "students": ["id", "firstname", "lastname", "program_code", "year", "gender"],
-            "programs": ["code", "name", "college_code"],
+            "students": ["id", "firstname", "lastname", "course", "year", "gender"],
+            "programs": ["code", "name", "college"],
             "colleges": ["code", "name"],
         }
         fields = preview_fields.get(table_name, [])
@@ -288,11 +280,121 @@ class MainWindow(ctk.CTk):
             )
         return "\n".join(report_lines)
 
+    def _show_restore_database_dialog(self):
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Restore Database")
+        dialog.geometry("760x320")
+        dialog.minsize(620, 260)
+        dialog.resizable(True, True)
+        dialog.configure(fg_color=BG_CARD)
+        dialog.transient(self)
+        dialog.grab_set()
+
+        container = ctk.CTkFrame(dialog, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=16, pady=16)
+
+        ctk.CTkLabel(
+            container,
+            text="Restore Database",
+            font=ctk.CTkFont(size=22, weight="bold"),
+            text_color=TEXT_PRIMARY,
+        ).pack(anchor="w")
+
+        ctk.CTkLabel(
+            container,
+            text="Select a backup file and confirm the restore. This will replace the current database.",
+            font=ctk.CTkFont(size=12),
+            text_color=TEXT_MUTED,
+            justify="left",
+        ).pack(anchor="w", pady=(6, 12))
+
+        path_var = tk.StringVar(value="")
+
+        path_row = ctk.CTkFrame(container, fg_color="transparent")
+        path_row.pack(fill="x", pady=(0, 12))
+        path_row.grid_columnconfigure(0, weight=1)
+
+        path_entry = ctk.CTkEntry(path_row, textvariable=path_var, placeholder_text="Choose a backup file...")
+        path_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+
+        def browse_backup():
+            selected = filedialog.askopenfilename(
+                title="Select database backup",
+                filetypes=[("SQLite Database", "*.db *.sqlite *.sqlite3"), ("All Files", "*.*")],
+            )
+            if selected:
+                path_var.set(selected)
+
+        ctk.CTkButton(
+            path_row,
+            text="Browse",
+            width=100,
+            fg_color="#1f2937",
+            hover_color="#273244",
+            text_color=TEXT_PRIMARY,
+            command=browse_backup,
+        ).grid(row=0, column=1)
+
+        ctk.CTkLabel(
+            container,
+            text="Tip: You can resize this window if you need more room to inspect the full backup path.",
+            font=ctk.CTkFont(size=11),
+            text_color=TEXT_MUTED,
+        ).pack(anchor="w", pady=(0, 8))
+
+        result = {"path": None}
+
+        def confirm_restore():
+            selected_path = path_var.get().strip()
+            if not selected_path:
+                messagebox.showwarning("Restore Database", "Please choose a backup file first.")
+                return
+            if not os.path.exists(selected_path):
+                messagebox.showerror("Restore Database", "The selected backup file does not exist.")
+                return
+            if not messagebox.askyesno(
+                "Confirm Restore",
+                "This will replace the current database with the selected backup. Continue?",
+            ):
+                return
+            result["path"] = selected_path
+            try:
+                dialog.grab_release()
+            except Exception:
+                pass
+            dialog.destroy()
+
+        button_row = ctk.CTkFrame(container, fg_color="transparent")
+        button_row.pack(fill="x", pady=(8, 0))
+
+        ctk.CTkButton(
+            button_row,
+            text="Restore",
+            fg_color=ACCENT_GREEN,
+            hover_color="#059669",
+            text_color="white",
+            command=confirm_restore,
+        ).pack(side="right")
+
+        ctk.CTkButton(
+            button_row,
+            text="Cancel",
+            fg_color="#374151",
+            hover_color="#4b5563",
+            text_color=TEXT_PRIMARY,
+            command=lambda: dialog.destroy(),
+        ).pack(side="right", padx=(0, 8))
+
+        dialog.protocol("WM_DELETE_WINDOW", lambda: dialog.destroy())
+        dialog.wait_window()
+        return result["path"]
+
     def _show_import_preview_dialog(self, csv_path, table_name, row_count, is_valid, errors, normalized_rows, diff_summary=None):
         dialog = ctk.CTkToplevel(self)
         dialog.title("CSV Import Preview")
         dialog.geometry("780x540")
         dialog.minsize(700, 460)
+        dialog.resizable(True, True)
         dialog.configure(fg_color=BG_CARD)
         dialog.transient(self)
         dialog.grab_set()
@@ -721,7 +823,7 @@ class MainWindow(ctk.CTk):
                 self.tree.column(col, width=180, anchor="w", minwidth=120)
             elif col == "id":
                 self.tree.column(col, width=110, anchor="center", minwidth=90)
-            elif col == "program_code":
+            elif col == "course":
                 self.tree.column(col, width=200, anchor="center", minwidth=160)
             else:
                 self.tree.column(col, width=120, anchor="center", minwidth=80)
@@ -826,10 +928,10 @@ class MainWindow(ctk.CTk):
         self.current_search_column = None
         self.current_search_query = ""
         search_opts = {"ID": "id", "First Name": "firstname",
-                       "Last Name": "lastname", "Program Code": "program_code",
+                       "Last Name": "lastname", "Course": "course",
                        "Year": "year", "Gender": "gender", "College": "college"}
         sort_opts    = search_opts.copy()
-        display_keys = ["id", "firstname", "lastname", "program_code",
+        display_keys = ["id", "firstname", "lastname", "course",
                         "year", "gender", "college"]
 
         self.current_file_key     = "students"
@@ -839,7 +941,7 @@ class MainWindow(ctk.CTk):
                                     search_opts, sort_opts, "students",
                                     display_keys, lambda: open_student_form(self))
         self.setup_treeview(("id", "firstname", "lastname",
-                             "program_code", "year", "gender", "college"),
+                             "course", "year", "gender", "college"),
                             accent=ACCENT_CYAN)
         self.tree.column("firstname", width=160)
         self.update_idletasks() 
@@ -857,8 +959,8 @@ class MainWindow(ctk.CTk):
         self.current_search_column = None
         self.current_search_query = ""
         self.update_idletasks() 
-        search_opts  = {"Code": "code", "Name": "name", "College": "college_code"}
-        display_keys = ["code", "name", "college_code"]
+        search_opts  = {"Code": "code", "Name": "name", "College": "college"}
+        display_keys = ["code", "name", "college"]
 
         self.current_file_key     = "programs"
         self.current_display_keys = display_keys[:]
@@ -866,7 +968,7 @@ class MainWindow(ctk.CTk):
         self.create_common_controls("Program Management", ACCENT_PURP,
                                     search_opts, search_opts, "programs",
                                     display_keys, lambda: open_program_form(self))
-        self.setup_treeview(("code", "name", "college_code"), accent=ACCENT_PURP)
+        self.setup_treeview(("code", "name", "college"), accent=ACCENT_PURP)
         self.tree.column("name", width=420, anchor="w")
         self.after(150, lambda: self.refresh_table(display_keys))
 
@@ -917,7 +1019,7 @@ class MainWindow(ctk.CTk):
         rows_per_page = self._get_rows_per_page()
         try:
             programs_list = get_all("programs")
-            prog_to_col   = {p['code']: p.get('college_code', 'N/A') for p in programs_list}
+            prog_to_col   = {p['code']: p.get('college', 'N/A') for p in programs_list}
         except:
             prog_to_col = {}
 
@@ -949,7 +1051,7 @@ class MainWindow(ctk.CTk):
                 row_values = []
                 for key in display_keys:
                     if key == "college" and self.current_file_key == "students":
-                        val = prog_to_col.get(s.get('program_code'), "—")
+                        val = prog_to_col.get(s.get('course'), "—")
                     else:
                         val = s.get(key, "—")
                     row_values.append(val)

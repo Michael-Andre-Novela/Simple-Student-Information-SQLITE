@@ -8,7 +8,7 @@ A desktop application for managing student, program, and college records — bui
 
 ### 👤 Student Management
 - Add, edit, and delete student records
-- Fields: Student ID, First Name, Last Name, Program, Year Level, Gender
+- Fields: Student ID, First Name, Last Name, Course, Year Level, Gender
 - College is automatically resolved from the student's enrolled program
 - Student ID is validated against the format `YYYY-NNNN`
 - Student names are normalized before saving
@@ -23,8 +23,8 @@ A desktop application for managing student, program, and college records — bui
 - College codes are validated before saving
 
 ### 🔍 Search & Filter
-- Search by any column (ID, name, program, year, gender, college)
-- Starts-with matching for fast lookups
+- Search by any column (ID, name, course, year, gender, college)
+- Partial matching for fast lookups
 
 ### ↕️ Sorting
 - Sort any column ascending or descending
@@ -62,7 +62,7 @@ A desktop application for managing student, program, and college records — bui
 ## 📁 Project Structure
 
 ```
-sis-SQLite/
+sis-SQLITE/
 ├── main.py                  # Preferred entry point
 ├── data/
 │   ├── students.csv         # Student records
@@ -119,6 +119,25 @@ python gui/main_window.py
 
 ## ✅ Validation Rules
 
+## 🧱 Database Schema (Final)
+
+### student
+- `id` (format: `YYYY-NNNN`)
+- `firstname`
+- `lastname`
+- `course` → refers to `program.code`
+- `year`
+- `gender`
+
+### program
+- `code` (e.g., `BSCS`)
+- `name` (e.g., `Bachelor of Science in Computer Science`)
+- `college` → refers to `college.code`
+
+### college
+- `code` (e.g., `CCS`)
+- `name` (e.g., `College of Computer Studies`)
+
 ### Student
 | Field | Rule |
 |-------|------|
@@ -126,7 +145,7 @@ python gui/main_window.py
 | First / Last Name | 2–64 characters, letters only (spaces, hyphens, apostrophes, dots allowed) |
 | Year Level | Integer between 1 and 5 |
 | Gender | Male, Female, or Other |
-| Program | Must exist in the programs list |
+| Course | Must exist in the programs list |
 
 ### Data Normalization
 - Student names are normalized (trim extra spaces, title-case words)

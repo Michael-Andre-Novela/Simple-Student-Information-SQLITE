@@ -13,20 +13,30 @@ DB_PATH = os.path.join(DATA_DIR, "sis_database.db")
 BACKUP_DIR = os.path.join(DATA_DIR, "backups")
 
 ALLOWED_COLUMNS = {
-    "students": {"id", "firstname", "lastname", "program_code", "year", "gender", "college"},
-    "programs": {"code", "name", "college_code"},
+    "students": {"id", "firstname", "lastname", "course", "year", "gender", "college"},
+    "programs": {"code", "name", "college"},
     "colleges": {"code", "name"},
 }
 
 TABLE_COLUMNS = {
-    "students": ["id", "firstname", "lastname", "program_code", "year", "gender"],
-    "programs": ["code", "name", "college_code"],
+    "students": ["id", "firstname", "lastname", "course", "year", "gender"],
+    "programs": ["code", "name", "college"],
     "colleges": ["code", "name"],
 }
 
 
 def _normalize_csv_headers(headers):
-    return {str(header).strip().lower() for header in headers if str(header).strip()}
+    normalized = set()
+    for header in headers:
+        key = str(header).strip().lower()
+        if not key:
+            continue
+        if key == "program_code":
+            key = "course"
+        elif key == "college_code":
+            key = "college"
+        normalized.add(key)
+    return normalized
 
 
 def detect_csv_table(filename):
@@ -83,8 +93,8 @@ def _build_where_clause(table_name, search_column, search_query):
         return (
             " WHERE EXISTS ("
             "SELECT 1 FROM programs p "
-            "WHERE p.code = students.program_code "
-            "AND p.college_code LIKE ?"
+            "WHERE p.code = students.course "
+            "AND p.college LIKE ?"
             ")",
             [query_param],
         )
@@ -100,7 +110,7 @@ def _build_order_clause(table_name, order_by, reverse):
         return ""
 
     if table_name == "students" and order_by == "college":
-        order_expr = "(SELECT p.college_code FROM programs p WHERE p.code = students.program_code)"
+        order_expr = "(SELECT p.college FROM programs p WHERE p.code = students.course)"
     else:
         if order_by not in ALLOWED_COLUMNS[table_name]:
             raise ValueError(f"Invalid order column '{order_by}' for table '{table_name}'")
@@ -128,8 +138,12 @@ def migration():
     with open(programs_path, newline="") as f:
         for row in csv.DictReader(f):
             c.execute(
-                "INSERT OR IGNORE INTO programs (code, name, college_code) VALUES (?, ?, ?)",
-                (row["code"], row["name"], row["college_code"])
+                "INSERT OR IGNORE INTO programs (code, name, college) VALUES (?, ?, ?)",
+                (
+                    row["code"],
+                    row["name"],
+                    row["college"],
+                )
             )
     print(f"Programs migrated.")
 
@@ -138,9 +152,9 @@ def migration():
     with open(students_path, newline="") as f:
         for row in csv.DictReader(f):
             c.execute(
-                "INSERT OR IGNORE INTO students (id, firstname, lastname, program_code, year, gender) VALUES (?, ?, ?, ?, ?, ?)",
+                 "INSERT OR IGNORE INTO students (id, firstname, lastname, course, year, gender) VALUES (?, ?, ?, ?, ?, ?)",
                 (row["id"], row["firstname"], row["lastname"],
-                 row["program_code"], row["year"], row["gender"])
+                row["course"], row["year"], row["gender"])
             )
     print(f"Students migrated.")
 
@@ -169,10 +183,10 @@ def db_initialization():
     c.execute(""" CREATE TABLE IF NOT EXISTS programs(
               code TEXT PRIMARY KEY,
               name TEXT NOT NULL,
-              college_code TEXT,
-              FOREIGN KEY (college_code) REFERENCES colleges(code)
+              college TEXT,
+              FOREIGN KEY (college) REFERENCES colleges(code)
               ON DELETE SET NULL,
-              UNIQUE(name,college_code)
+              UNIQUE(name,college)
               )""")
 
     # 3. Bottom Level: Students (References Programs)
@@ -180,10 +194,10 @@ def db_initialization():
               id TEXT PRIMARY KEY,
               firstname TEXT NOT NULL,
               lastname TEXT NOT NULL,
-              program_code TEXT,
+              course TEXT,
               year INTEGER NOT NULL CHECK (year BETWEEN 1 AND 5),
               gender TEXT NOT NULL CHECK (gender IN ('Male','Female','Other')),
-              FOREIGN KEY (program_code) REFERENCES programs(code) ON DELETE SET NULL,
+              FOREIGN KEY (course) REFERENCES programs(code) ON DELETE SET NULL,
               CHECK (id GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]')
               )""")
     conn.commit()
@@ -209,18 +223,20 @@ def ensure_programs_constraints():
     fk_rows = c.execute("PRAGMA foreign_key_list(programs)").fetchall()
     program_fk = None
     for fk in fk_rows:
-        if fk[3] == "college_code" and fk[2] == "colleges":
+        if fk[3] in ("college", "college_code") and fk[2] == "colleges":
             program_fk = fk
             break
 
     on_delete_action = (program_fk[6] if program_fk else "").upper()
     table_info = c.execute("PRAGMA table_info(programs)").fetchall()
-    college_column = next((row for row in table_info if row[1] == "college_code"), None)
+    column_names = {row[1] for row in table_info}
+    college_column = next((row for row in table_info if row[1] == "college"), None)
     college_not_null = bool(college_column and college_column[3] == 1)
     table_sql = _get_table_sql(c, "programs").lower()
-    has_unique_name_college = "unique(name,college_code)" in table_sql.replace(" ", "")
+    has_unique_name_college = "unique(name,college)" in table_sql.replace(" ", "")
+    has_legacy_column = "college_code" in column_names
 
-    if on_delete_action == "SET NULL" and not college_not_null and has_unique_name_college:
+    if on_delete_action == "SET NULL" and not college_not_null and has_unique_name_college and not has_legacy_column:
         conn.close()
         return
 
@@ -232,15 +248,18 @@ def ensure_programs_constraints():
         c.execute("""CREATE TABLE programs(
               code TEXT PRIMARY KEY,
               name TEXT NOT NULL,
-              college_code TEXT,
-              FOREIGN KEY (college_code) REFERENCES colleges(code)
+              college TEXT,
+              FOREIGN KEY (college) REFERENCES colleges(code)
               ON DELETE SET NULL,
-              UNIQUE(name,college_code)
+              UNIQUE(name,college)
               )""")
 
-        c.execute("""INSERT INTO programs(code, name, college_code)
-                     SELECT code, name, college_code
-                     FROM programs_old""")
+        old_columns = {row[1] for row in c.execute("PRAGMA table_info(programs_old)").fetchall()}
+        source_college_column = "college" if "college" in old_columns else "college_code"
+
+        c.execute(f"""INSERT INTO programs(code, name, college)
+               SELECT code, name, {source_college_column}
+               FROM programs_old""")
 
         c.execute("DROP TABLE programs_old")
         c.execute("COMMIT")
@@ -260,18 +279,23 @@ def ensure_students_constraints():
     fk_rows = c.execute("PRAGMA foreign_key_list(students)").fetchall()
     student_fk = None
     for fk in fk_rows:
-        if fk[3] == "program_code" and fk[2] == "programs":
+        if fk[3] in ("course", "program_code") and fk[2] == "programs":
             student_fk = fk
             break
 
     on_delete_action = (student_fk[6] if student_fk else "").upper()
     table_info = c.execute("PRAGMA table_info(students)").fetchall()
+    column_names = {row[1] for row in table_info}
+    course_column = next((row for row in table_info if row[1] == "course"), None)
     program_column = next((row for row in table_info if row[1] == "program_code"), None)
-    program_not_null = bool(program_column and program_column[3] == 1)
+    target_column = course_column if course_column else program_column
+    program_not_null = bool(target_column and target_column[3] == 1)
     table_sql = _get_table_sql(c, "students").lower().replace(" ", "")
     has_year_check = "check(yearbetween1and5)" in table_sql
     has_gender_check = "check(genderin('male','female','other'))" in table_sql
     has_id_check = "check(idglob'[0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]')" in table_sql
+
+    has_legacy_column = "program_code" in column_names
 
     if (
         on_delete_action == "SET NULL"
@@ -279,6 +303,7 @@ def ensure_students_constraints():
         and has_year_check
         and has_gender_check
         and has_id_check
+        and not has_legacy_column
     ):
         conn.close()
         return
@@ -292,15 +317,18 @@ def ensure_students_constraints():
               id TEXT PRIMARY KEY CHECK (id GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]'),
               firstname TEXT NOT NULL,
               lastname TEXT NOT NULL,
-              program_code TEXT,
+              course TEXT,
               year INTEGER NOT NULL CHECK (year BETWEEN 1 AND 5),
               gender TEXT NOT NULL CHECK (gender IN ('Male','Female','Other')),
-              FOREIGN KEY (program_code) REFERENCES programs(code) ON DELETE SET NULL
+              FOREIGN KEY (course) REFERENCES programs(code) ON DELETE SET NULL
               )""")
 
-        c.execute("""INSERT INTO students(id, firstname, lastname, program_code, year, gender)
-                     SELECT id, firstname, lastname, program_code, CAST(year AS INTEGER), gender
-                     FROM students_old""")
+        old_columns = {row[1] for row in c.execute("PRAGMA table_info(students_old)").fetchall()}
+        source_course_column = "course" if "course" in old_columns else "program_code"
+
+        c.execute(f"""INSERT INTO students(id, firstname, lastname, course, year, gender)
+                                     SELECT id, firstname, lastname, {source_course_column}, CAST(year AS INTEGER), gender
+                                     FROM students_old""")
 
         c.execute("DROP TABLE students_old")
         c.execute("COMMIT")
@@ -317,7 +345,7 @@ def add_student(id, fname, lname, p_code, year, gender):
     conn = get_connection()
     c = conn.cursor()
     try:
-        c.execute("""INSERT INTO students(id, firstname, lastname, program_code, year, gender)
+        c.execute("""INSERT INTO students(id, firstname, lastname, course, year, gender)
                   VALUES(?,?,?,?,?,?)""",
                   (id,fname,lname,p_code,year,gender))
         conn.commit()
@@ -327,15 +355,15 @@ def add_student(id, fname, lname, p_code, year, gender):
     finally:
         conn.close()
 
-def add_program(code, name, college_code):
+def add_program(code, name, college):
     """Inserts a new program into the database."""
     conn = get_connection()
     c = conn.cursor()
     
     try:
-        c.execute(""" INSERT INTO programs(code, name, college_code)
+        c.execute(""" INSERT INTO programs(code, name, college)
                   VALUES (?,?,?)""",
-                  (code,name,college_code))
+                  (code,name,college))
         conn.commit()
 
     except sqlite3.IntegrityError:
@@ -369,8 +397,8 @@ def update_student(student_id, fname, lname, p_code, year, gender):
     
     try:
         c.execute("""UPDATE students SET firstname=?,
-                                         lastname=?,
-                                         program_code=?,
+                         lastname=?,
+                         course=?,
                                          year = ?, 
                                          gender = ? WHERE id = ?
                   """, (fname,lname,p_code,year,gender, student_id))
@@ -382,15 +410,15 @@ def update_student(student_id, fname, lname, p_code, year, gender):
         conn.close()
 
 
-def update_program(code, name, college_code):
+def update_program(code, name, college):
     """Updates an existing program record based on its code."""
     conn = get_connection()
     c = conn.cursor()
 
     try:
-        c.execute(""" UPDATE programs SET college_code = ?,
+        c.execute(""" UPDATE programs SET college = ?,
                                           name = ? WHERE code= ?
-                  """, (college_code,name,code))
+                  """, (college,name,code))
         conn.commit()
     except sqlite3.IntegrityError:
         print("ERROR!")
@@ -436,26 +464,6 @@ def delete_record(table_name, identifier):
         raise
     finally:
         conn.close()
-def search(table_name, column, query):
-    pk = "id" if table_name == "students" else "code"
-    conn = get_connection()
-    conn.row_factory = sqlite3.Row
-    rows = conn.execute(
-        f"SELECT * FROM {table_name} WHERE {column} LIKE ?", (f"%{query}%",)
-    ).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
-
-def sort(table_name,column, reverse=False):
-    order = "DESC" if reverse else "ASC"
-    conn = get_connection()
-    conn.row_factory = sqlite3.Row
-    rows = conn.execute(
-        f"SELECT * FROM {table_name} ORDER BY {column} {order}"
-    ).fetchall()
-    conn.close()
-    return[dict(r) for r in rows]
-
 def get_one(table_name, identifier):
     pk = "id" if table_name == "students" else "code"
     conn = get_connection()
@@ -505,9 +513,9 @@ def _infer_error_field(message):
     if "last name" in msg:
         return "lastname"
     if "program code" in msg:
-        return "program_code"
+        return "course"
     if "college" in msg:
-        return "college_code"
+        return "college"
     if "year" in msg:
         return "year"
     if "gender" in msg:
@@ -555,8 +563,8 @@ def validate_csv_rows(table_name, filename):
 
     with open(filename, newline="", encoding="utf-8") as csvfile:
         reader = csv.DictReader(csvfile)
-        fieldnames = reader.fieldnames or []
-        missing_columns = [column for column in columns if column not in fieldnames]
+        normalized_headers = _normalize_csv_headers(reader.fieldnames or [])
+        missing_columns = [column for column in columns if column not in normalized_headers]
         if missing_columns:
             errors.append(
                 {
@@ -596,7 +604,7 @@ def validate_csv_rows(table_name, filename):
                 profile_key = (
                     row.get("firstname", ""),
                     row.get("lastname", ""),
-                    row.get("program_code", ""),
+                    row.get("course", ""),
                     str(row.get("year", "")),
                 )
                 if profile_key in seen_student_profiles:
@@ -604,7 +612,7 @@ def validate_csv_rows(table_name, filename):
                         {
                             "row": row_num,
                             "field": "profile",
-                            "message": "Duplicate student profile in CSV (firstname, lastname, program_code, year).",
+                            "message": "Duplicate student profile in CSV (firstname, lastname, course, year).",
                         }
                     )
                 else:
@@ -698,7 +706,7 @@ def cleanup_legacy_students(dry_run=True, fallback_program_code=None, max_detail
 
     try:
         rows = conn.execute(
-            "SELECT id, firstname, lastname, program_code, year, gender FROM students"
+            "SELECT id, firstname, lastname, course, year, gender FROM students"
         ).fetchall()
 
         for row in rows:
@@ -749,7 +757,7 @@ def cleanup_legacy_students(dry_run=True, fallback_program_code=None, max_detail
         if not dry_run and updates:
             conn.executemany(
                 """UPDATE students
-                   SET firstname = ?, lastname = ?, program_code = ?
+                         SET firstname = ?, lastname = ?, course = ?
                    WHERE id = ?""",
                 [
                     (

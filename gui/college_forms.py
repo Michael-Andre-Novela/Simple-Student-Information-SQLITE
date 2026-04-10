@@ -31,10 +31,10 @@ def styled_entry(parent, placeholder, width=340):
 def handle_delete(app, edit_data):
     code = str(edit_data[0])
     all_programs = get_all("programs")
-    affected_programs = [p for p in all_programs if p.get('college_code') == code]
+    affected_programs = [p for p in all_programs if p.get('college') == code]
     affected_codes = {p['code'] for p in affected_programs}
     all_students = get_all("students")
-    affected_students = [s for s in all_students if s.get('program_code') in affected_codes]
+    affected_students = [s for s in all_students if s.get('course') in affected_codes]
 
     confirm = ctk.CTkToplevel(app)
     confirm.title("Confirm Delete")

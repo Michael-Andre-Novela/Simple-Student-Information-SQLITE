@@ -34,7 +34,7 @@ def normalize_student_data(student_data):
         "id": _normalize_spaces(student_data.get("id", "")),
         "firstname": normalize_name(student_data.get("firstname", "")),
         "lastname": normalize_name(student_data.get("lastname", "")),
-        "program_code": _normalize_spaces(student_data.get("program_code", "")),
+        "course": _normalize_spaces(student_data.get("course", "")),
         "year": _normalize_spaces(student_data.get("year", "")),
         "gender": _normalize_spaces(student_data.get("gender", "")).title(),
     }
@@ -44,7 +44,7 @@ def normalize_program_data(program_data):
     return {
         "code": _normalize_spaces(program_data.get("code", "")),
         "name": _normalize_spaces(program_data.get("name", "")),
-        "college_code": _normalize_spaces(program_data.get("college_code", "")),
+        "college": _normalize_spaces(program_data.get("college", "")),
     }
 
 
@@ -73,14 +73,14 @@ def id_already_exists(id_number):
     return get_one("students", id_number) is not None
 
 
-def student_duplicate_exists(firstname, lastname, program_code, year, exclude_id=None):
+def student_duplicate_exists(firstname, lastname, course, year, exclude_id=None):
     conn = get_connection()
     try:
         sql = (
             "SELECT id FROM students "
-            "WHERE firstname = ? AND lastname = ? AND program_code = ? AND year = ?"
+            "WHERE firstname = ? AND lastname = ? AND course = ? AND year = ?"
         )
-        params = [firstname, lastname, program_code, int(year)]
+        params = [firstname, lastname, course, int(year)]
         if exclude_id:
             sql += " AND id != ?"
             params.append(exclude_id)
@@ -96,10 +96,10 @@ def program_exists(program_code):
 def college_exists(college_code):
     return get_one("colleges", college_code) is not None
 
-def program_code_exists(code):
+def program_exists_by_code(code):
     return get_one("programs", code) is not None
 
-def college_code_exists(code):
+def college_exists_by_code(code):
     return get_one("colleges", code) is not None
 
 
@@ -112,7 +112,7 @@ def validate_student(student_data, skip_id_check=False, skip_duplicate_profile_c
     sid = student_data["id"]
     firstname = student_data["firstname"]
     lastname = student_data["lastname"]
-    program = student_data["program_code"]
+    program = student_data["course"]
     year = student_data["year"]
     gender = student_data["gender"]
 
@@ -191,7 +191,7 @@ def validate_program(program_data, is_edit=False):
     program_data = normalize_program_data(program_data)
     code = program_data["code"]
     name = program_data["name"]
-    college = program_data["college_code"]
+    college = program_data["college"]
 
     # 1. Code empty
     if is_blank(code):
@@ -227,7 +227,7 @@ def validate_program(program_data, is_edit=False):
 
     # 8. Duplicate code check (skip for edits)
     if not is_edit:
-        if program_code_exists(code):
+        if program_exists_by_code(code):
             return False, f"Program code '{code}' already exists."
 
     return True, "Valid."
@@ -270,7 +270,7 @@ def validate_college(college_data, is_edit=False):
 
     # 7. Duplicate code check (skip for edits)
     if not is_edit:
-        if college_code_exists(code):
+        if college_exists_by_code(code):
             return False, f"College code '{code}' already exists."
 
     return True, "Valid."

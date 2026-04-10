@@ -152,7 +152,7 @@ def open_student_form(app, edit_data=None):
     def update_programs(*_):
         all_programs = get_all("programs")
         filtered = [p['code'] for p in all_programs
-                    if p.get('college_code') == college_var.get()]
+                    if p.get('college') == college_var.get()]
         if not filtered:
             filtered = ["No programs available"]
         program_menu.configure(values=filtered)
@@ -175,9 +175,9 @@ def open_student_form(app, edit_data=None):
         year_var.set(str(edit_data[4]))
         gender_var.set(str(edit_data[5]))
         prog = get_one("programs", str(edit_data[3])) 
-        college_code = prog['college_code'] if prog else college_codes[0]
-        if college_code in college_codes:
-            college_var.set(college_code)
+        college_value = prog['college'] if prog else college_codes[0]
+        if college_value in college_codes:
+            college_var.set(college_value)
             update_programs()
         program_var.set(str(edit_data[3]))
 
@@ -187,7 +187,7 @@ def open_student_form(app, edit_data=None):
             "id":           str(edit_data[0]) if is_edit else id_entry.get().strip(),
             "firstname":    fname_entry.get().strip(),
             "lastname":     lname_entry.get().strip(),
-            "program_code": program_var.get(),
+            "course":       program_var.get(),
             "year":         year_var.get(),
             "gender":       gender_var.get()
         }
@@ -204,14 +204,14 @@ def open_student_form(app, edit_data=None):
             if is_edit:
                 update_student(student_data["id"], student_data["firstname"],
                                student_data["lastname"],
-                               student_data["program_code"],
+                               student_data["course"],
                                student_data["year"],
                                student_data["gender"])
                 success_message = f"Student {student_data['id']} updated successfully."
             else:
                 add_student(student_data["id"], student_data["firstname"],
                             student_data["lastname"],
-                            student_data["program_code"],
+                            student_data["course"],
                             student_data["year"],
                             student_data["gender"])
                 success_message = f"Student {student_data['id']} added successfully."

@@ -41,7 +41,7 @@ def styled_option(parent, values, variable, width=340):
 def handle_delete(app, edit_data):
     code = str(edit_data[0])
     all_students = get_all("students")
-    affected = [s for s in all_students if s.get('program_code') == code]
+    affected = [s for s in all_students if s.get('course') == code]
 
     confirm = ctk.CTkToplevel(app)
     confirm.title("Confirm Delete")
@@ -142,7 +142,7 @@ def open_program_form(app, edit_data=None):
     def handle_save():
         code = str(edit_data[0]) if is_edit else code_entry.get().strip().upper()
         name = name_entry.get().strip()
-        program_data = {"code": code, "name": name, "college_code": college_var.get()}
+        program_data = {"code": code, "name": name, "college": college_var.get()}
         program_data = normalize_program_data(program_data)
 
         is_valid, msg = validate_program(program_data, is_edit=is_edit)
@@ -153,10 +153,10 @@ def open_program_form(app, edit_data=None):
 
         try:
             if is_edit:
-                update_program(program_data["code"], program_data["name"], program_data["college_code"])
+                update_program(program_data["code"], program_data["name"], program_data["college"])
                 success_message = f"Program {program_data['code']} updated successfully."
             else:
-                add_program(program_data["code"], program_data["name"], program_data["college_code"])
+                add_program(program_data["code"], program_data["name"], program_data["college"])
                 success_message = f"Program {program_data['code']} added successfully."
 
             app.current_data = get_all("programs")
