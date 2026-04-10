@@ -281,113 +281,27 @@ class MainWindow(ctk.CTk):
         return "\n".join(report_lines)
 
     def _show_restore_database_dialog(self):
-        dialog = ctk.CTkToplevel(self)
-        dialog.title("Restore Database")
-        dialog.geometry("760x320")
-        dialog.minsize(620, 260)
-        dialog.resizable(True, True)
-        dialog.configure(fg_color=BG_CARD)
-        dialog.transient(self)
-        dialog.grab_set()
+        selected_path = filedialog.askopenfilename(
+            parent=self,
+            title="Select database backup",
+            filetypes=[("SQLite Database", "*.db *.sqlite *.sqlite3"), ("All Files", "*.*")],
+        )
+        if not selected_path:
+            return None
 
-        container = ctk.CTkFrame(dialog, fg_color="transparent")
-        container.pack(fill="both", expand=True, padx=16, pady=16)
+        selected_path = selected_path.strip()
+        if not os.path.exists(selected_path):
+            messagebox.showerror("Restore Database", "The selected backup file does not exist.")
+            return None
 
-        ctk.CTkLabel(
-            container,
-            text="Restore Database",
-            font=ctk.CTkFont(size=22, weight="bold"),
-            text_color=TEXT_PRIMARY,
-        ).pack(anchor="w")
+        if not messagebox.askyesno(
+            "Confirm Restore",
+            "This will replace the current database with the selected backup. Continue?",
+            parent=self,
+        ):
+            return None
 
-        ctk.CTkLabel(
-            container,
-            text="Select a backup file and confirm the restore. This will replace the current database.",
-            font=ctk.CTkFont(size=12),
-            text_color=TEXT_MUTED,
-            justify="left",
-        ).pack(anchor="w", pady=(6, 12))
-
-        path_var = tk.StringVar(value="")
-
-        path_row = ctk.CTkFrame(container, fg_color="transparent")
-        path_row.pack(fill="x", pady=(0, 12))
-        path_row.grid_columnconfigure(0, weight=1)
-
-        path_entry = ctk.CTkEntry(path_row, textvariable=path_var, placeholder_text="Choose a backup file...")
-        path_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
-
-        def browse_backup():
-            selected = filedialog.askopenfilename(
-                title="Select database backup",
-                filetypes=[("SQLite Database", "*.db *.sqlite *.sqlite3"), ("All Files", "*.*")],
-            )
-            if selected:
-                path_var.set(selected)
-
-        ctk.CTkButton(
-            path_row,
-            text="Browse",
-            width=100,
-            fg_color="#1f2937",
-            hover_color="#273244",
-            text_color=TEXT_PRIMARY,
-            command=browse_backup,
-        ).grid(row=0, column=1)
-
-        ctk.CTkLabel(
-            container,
-            text="Tip: You can resize this window if you need more room to inspect the full backup path.",
-            font=ctk.CTkFont(size=11),
-            text_color=TEXT_MUTED,
-        ).pack(anchor="w", pady=(0, 8))
-
-        result = {"path": None}
-
-        def confirm_restore():
-            selected_path = path_var.get().strip()
-            if not selected_path:
-                messagebox.showwarning("Restore Database", "Please choose a backup file first.")
-                return
-            if not os.path.exists(selected_path):
-                messagebox.showerror("Restore Database", "The selected backup file does not exist.")
-                return
-            if not messagebox.askyesno(
-                "Confirm Restore",
-                "This will replace the current database with the selected backup. Continue?",
-            ):
-                return
-            result["path"] = selected_path
-            try:
-                dialog.grab_release()
-            except Exception:
-                pass
-            dialog.destroy()
-
-        button_row = ctk.CTkFrame(container, fg_color="transparent")
-        button_row.pack(fill="x", pady=(8, 0))
-
-        ctk.CTkButton(
-            button_row,
-            text="Restore",
-            fg_color=ACCENT_GREEN,
-            hover_color="#059669",
-            text_color="white",
-            command=confirm_restore,
-        ).pack(side="right")
-
-        ctk.CTkButton(
-            button_row,
-            text="Cancel",
-            fg_color="#374151",
-            hover_color="#4b5563",
-            text_color=TEXT_PRIMARY,
-            command=lambda: dialog.destroy(),
-        ).pack(side="right", padx=(0, 8))
-
-        dialog.protocol("WM_DELETE_WINDOW", lambda: dialog.destroy())
-        dialog.wait_window()
-        return result["path"]
+        return selected_path
 
     def _show_import_preview_dialog(self, csv_path, table_name, row_count, is_valid, errors, normalized_rows, diff_summary=None):
         dialog = ctk.CTkToplevel(self)
