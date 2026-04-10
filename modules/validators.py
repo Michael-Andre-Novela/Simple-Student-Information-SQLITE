@@ -41,10 +41,11 @@ def normalize_student_data(student_data):
 
 
 def normalize_program_data(program_data):
+    college_value = program_data.get("college", program_data.get("college_code", ""))
     return {
         "code": _normalize_spaces(program_data.get("code", "")),
         "name": _normalize_spaces(program_data.get("name", "")),
-        "college": _normalize_spaces(program_data.get("college", "")),
+        "college": _normalize_spaces(college_value),
     }
 
 
