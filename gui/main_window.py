@@ -3,6 +3,7 @@ import tkinter as tk
 import customtkinter as ctk
 import os
 import sys
+from datetime import datetime
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
@@ -15,6 +16,8 @@ from modules.database_io import (
     get_page,
     get_count,
     detect_csv_table,
+    validate_csv_rows,
+    analyze_import_changes,
     import_table,
     backup_database,
     restore_database,
@@ -219,6 +222,219 @@ class MainWindow(ctk.CTk):
             self.set_status(f"Restore failed: {exc}", color=ACCENT_RED)
             messagebox.showerror("Restore Failed", str(exc))
 
+    def _build_import_preview_details(self, table_name, is_valid, errors, normalized_rows, diff_summary=None):
+        preview_fields = {
+            "students": ["id", "firstname", "lastname", "program_code", "year", "gender"],
+            "programs": ["code", "name", "college_code"],
+            "colleges": ["code", "name"],
+        }
+        fields = preview_fields.get(table_name, [])
+
+        if not is_valid:
+            lines = ["Validation errors:", ""]
+            for error in errors[:20]:
+                lines.append(
+                    f"• Row {error['row']} ({error['field']}): {error['message']}"
+                )
+            if len(errors) > 20:
+                lines.append("")
+                lines.append(f"... and {len(errors) - 20} more error(s).")
+            return "\n".join(lines)
+
+        lines = ["Validation passed."]
+
+        if diff_summary:
+            lines.extend([
+                "",
+                "Dry-run diff summary:",
+                f"- New records: {diff_summary.get('inserts', 0)}",
+                f"- Existing records to update: {diff_summary.get('updates', 0)}",
+                f"- Unchanged existing rows: {diff_summary.get('unchanged', 0)}",
+            ])
+
+            update_samples = diff_summary.get("update_samples", [])
+            if update_samples:
+                lines.append("")
+                lines.append("Update samples:")
+                for sample in update_samples[:5]:
+                    changed = ", ".join(sample.get("changed_fields", []))
+                    lines.append(f"• {sample.get('pk')}: {changed}")
+
+        lines.extend(["", "Sample rows (first 5):", ""])
+        for index, row in enumerate(normalized_rows[:5], start=1):
+            rendered_values = [f"{field}={row.get(field, '')}" for field in fields]
+            lines.append(f"{index}. " + " | ".join(rendered_values))
+
+        if len(normalized_rows) > 5:
+            lines.append("")
+            lines.append(f"... plus {len(normalized_rows) - 5} more row(s).")
+
+        return "\n".join(lines)
+
+    def _build_import_error_report(self, csv_path, table_name, row_count, errors):
+        report_lines = [
+            "SIS CSV Import Validation Report",
+            "=" * 34,
+            f"Source CSV: {csv_path}",
+            f"Detected Table: {table_name}",
+            f"Rows Scanned: {row_count}",
+            f"Total Errors: {len(errors)}",
+            "",
+            "Details:",
+        ]
+        for error in errors:
+            report_lines.append(
+                f"- Row {error['row']} ({error['field']}): {error['message']}"
+            )
+        return "\n".join(report_lines)
+
+    def _show_import_preview_dialog(self, csv_path, table_name, row_count, is_valid, errors, normalized_rows, diff_summary=None):
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("CSV Import Preview")
+        dialog.geometry("780x540")
+        dialog.minsize(700, 460)
+        dialog.configure(fg_color=BG_CARD)
+        dialog.transient(self)
+        dialog.grab_set()
+
+        container = ctk.CTkFrame(dialog, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=16, pady=16)
+
+        status_text = "Ready to Import" if is_valid else "Validation Failed"
+        status_color = ACCENT_GREEN if is_valid else ACCENT_RED
+
+        ctk.CTkLabel(
+            container,
+            text="CSV Import Preview",
+            font=ctk.CTkFont(size=22, weight="bold"),
+            text_color=TEXT_PRIMARY,
+        ).pack(anchor="w")
+
+        ctk.CTkLabel(
+            container,
+            text=f"Status: {status_text}",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=status_color,
+        ).pack(anchor="w", pady=(8, 2))
+
+        summary_text = (
+            f"Detected table: {table_name}    "
+            f"Rows scanned: {row_count}    "
+            f"Errors: {len(errors)}"
+        )
+        if is_valid and diff_summary:
+            summary_text += (
+                f"\nNew: {diff_summary.get('inserts', 0)}    "
+                f"Updates: {diff_summary.get('updates', 0)}    "
+                f"Unchanged: {diff_summary.get('unchanged', 0)}"
+            )
+
+        ctk.CTkLabel(
+            container,
+            text=summary_text,
+            font=ctk.CTkFont(size=12),
+            text_color=TEXT_MUTED,
+            justify="left",
+        ).pack(anchor="w", pady=(0, 10))
+
+        detail_box = ctk.CTkTextbox(
+            container,
+            fg_color="#111827",
+            text_color=TEXT_PRIMARY,
+            corner_radius=10,
+            font=ctk.CTkFont(family="Courier", size=12),
+            wrap="word",
+        )
+        detail_box.pack(fill="both", expand=True)
+        detail_box.insert(
+            "1.0",
+            self._build_import_preview_details(
+                table_name=table_name,
+                is_valid=is_valid,
+                errors=errors,
+                normalized_rows=normalized_rows,
+                diff_summary=diff_summary,
+            ),
+        )
+        detail_box.configure(state="disabled")
+
+        result = {"confirmed": False}
+
+        def close_dialog(confirmed=False):
+            result["confirmed"] = confirmed
+            try:
+                dialog.grab_release()
+            except Exception:
+                pass
+            dialog.destroy()
+
+        button_row = ctk.CTkFrame(container, fg_color="transparent")
+        button_row.pack(fill="x", pady=(12, 0))
+
+        if is_valid:
+            ctk.CTkButton(
+                button_row,
+                text="Import Now",
+                fg_color=ACCENT_GREEN,
+                hover_color="#059669",
+                text_color="white",
+                command=lambda: close_dialog(confirmed=True),
+            ).pack(side="right")
+
+            ctk.CTkButton(
+                button_row,
+                text="Cancel",
+                fg_color="#374151",
+                hover_color="#4b5563",
+                text_color=TEXT_PRIMARY,
+                command=lambda: close_dialog(confirmed=False),
+            ).pack(side="right", padx=(0, 8))
+        else:
+            def export_error_report():
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                suggested_name = f"import_errors_{table_name}_{timestamp}.txt"
+                destination = filedialog.asksaveasfilename(
+                    title="Save import error report",
+                    defaultextension=".txt",
+                    initialfile=suggested_name,
+                    filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")],
+                )
+                if not destination:
+                    return
+
+                report_text = self._build_import_error_report(
+                    csv_path=csv_path,
+                    table_name=table_name,
+                    row_count=row_count,
+                    errors=errors,
+                )
+                with open(destination, "w", encoding="utf-8") as report_file:
+                    report_file.write(report_text)
+
+                self.set_status(f"Error report saved: {destination}", color=ACCENT_GREEN)
+
+            ctk.CTkButton(
+                button_row,
+                text="Export Error Report",
+                fg_color="#7c3aed",
+                hover_color="#6d28d9",
+                text_color="white",
+                command=export_error_report,
+            ).pack(side="left")
+
+            ctk.CTkButton(
+                button_row,
+                text="Close",
+                fg_color="#374151",
+                hover_color="#4b5563",
+                text_color=TEXT_PRIMARY,
+                command=lambda: close_dialog(confirmed=False),
+            ).pack(side="right")
+
+        dialog.protocol("WM_DELETE_WINDOW", lambda: close_dialog(confirmed=False))
+        dialog.wait_window()
+        return result["confirmed"]
+
     def _import_csv_action(self):
         csv_path = filedialog.askopenfilename(
             title="Select CSV to import",
@@ -229,18 +445,50 @@ class MainWindow(ctk.CTk):
 
         try:
             table_name = detect_csv_table(csv_path)
-            if not messagebox.askyesno(
-                "Confirm Import",
-                f"Detected '{table_name}' from the selected CSV.\n\nImport this file now?",
-            ):
-                self.set_status("CSV import canceled.", color=TEXT_MUTED)
+            is_valid, errors, normalized_rows = validate_csv_rows(table_name, csv_path)
+            row_count = len(normalized_rows)
+            diff_summary = None
+
+            if is_valid:
+                diff_summary = analyze_import_changes(table_name, normalized_rows)
+
+            confirmed = self._show_import_preview_dialog(
+                csv_path=csv_path,
+                table_name=table_name,
+                row_count=row_count,
+                is_valid=is_valid,
+                errors=errors,
+                normalized_rows=normalized_rows,
+                diff_summary=diff_summary,
+            )
+
+            if not is_valid:
+                self.set_status(
+                    f"Import blocked: {len(errors)} validation error(s) in CSV.",
+                    color=ACCENT_RED,
+                )
+                return
+
+            if not confirmed:
+                self.set_status("CSV import canceled after preview.", color=TEXT_MUTED)
                 return
 
             imported = import_table(table_name, csv_path)
-            self.set_status(
-                f"Imported {imported} row(s) into {table_name} from CSV.",
-                color=ACCENT_GREEN,
-            )
+            if diff_summary:
+                self.set_status(
+                    (
+                        f"Imported {imported} row(s): "
+                        f"{diff_summary.get('inserts', 0)} new, "
+                        f"{diff_summary.get('updates', 0)} update(s), "
+                        f"{diff_summary.get('unchanged', 0)} unchanged."
+                    ),
+                    color=ACCENT_GREEN,
+                )
+            else:
+                self.set_status(
+                    f"Imported {imported} row(s) into {table_name} from CSV.",
+                    color=ACCENT_GREEN,
+                )
             messagebox.showinfo(
                 "Import Complete",
                 f"Detected '{table_name}' and imported {imported} row(s).",

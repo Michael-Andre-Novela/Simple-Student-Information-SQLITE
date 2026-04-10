@@ -782,6 +782,95 @@ def cleanup_legacy_students(dry_run=True, fallback_program_code=None, max_detail
     finally:
         conn.close()
 
+
+def _to_compare_key(value):
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def analyze_import_changes(table_name, normalized_rows):
+    _validate_table(table_name)
+
+    columns = TABLE_COLUMNS[table_name]
+    pk_field = "id" if table_name == "students" else "code"
+    compare_columns = [column for column in columns if column != pk_field]
+
+    if not normalized_rows:
+        return {
+            "total_rows": 0,
+            "inserts": 0,
+            "updates": 0,
+            "unchanged": 0,
+            "pk_field": pk_field,
+            "update_samples": [],
+        }
+
+    existing_by_pk = {}
+    pk_values = [str(row.get(pk_field, "")).strip() for row in normalized_rows]
+
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    try:
+        cursor = conn.cursor()
+        chunk_size = 500
+        selected_columns = ", ".join(columns)
+
+        for start in range(0, len(pk_values), chunk_size):
+            chunk = pk_values[start:start + chunk_size]
+            if not chunk:
+                continue
+            placeholders = ",".join(["?"] * len(chunk))
+            rows = cursor.execute(
+                f"SELECT {selected_columns} FROM {table_name} "
+                f"WHERE {pk_field} IN ({placeholders})",
+                chunk,
+            ).fetchall()
+            for row in rows:
+                row_dict = dict(row)
+                existing_by_pk[str(row_dict.get(pk_field, "")).strip()] = row_dict
+    finally:
+        conn.close()
+
+    inserts = 0
+    updates = 0
+    unchanged = 0
+    update_samples = []
+
+    for row in normalized_rows:
+        pk_value = str(row.get(pk_field, "")).strip()
+        existing = existing_by_pk.get(pk_value)
+
+        if existing is None:
+            inserts += 1
+            continue
+
+        changed_fields = []
+        for column in compare_columns:
+            old_value = _to_compare_key(existing.get(column))
+            new_value = _to_compare_key(row.get(column))
+            if old_value != new_value:
+                changed_fields.append(column)
+
+        if changed_fields:
+            updates += 1
+            if len(update_samples) < 5:
+                update_samples.append({
+                    "pk": pk_value,
+                    "changed_fields": changed_fields,
+                })
+        else:
+            unchanged += 1
+
+    return {
+        "total_rows": len(normalized_rows),
+        "inserts": inserts,
+        "updates": updates,
+        "unchanged": unchanged,
+        "pk_field": pk_field,
+        "update_samples": update_samples,
+    }
+
 def import_table(table_name, filename):
     _validate_table(table_name)
     columns = TABLE_COLUMNS[table_name]
