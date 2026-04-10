@@ -30,11 +30,12 @@ def normalize_name(value):
 
 
 def normalize_student_data(student_data):
+    course_value = student_data.get("course", student_data.get("program_code", ""))
     return {
         "id": _normalize_spaces(student_data.get("id", "")),
         "firstname": normalize_name(student_data.get("firstname", "")),
         "lastname": normalize_name(student_data.get("lastname", "")),
-        "course": _normalize_spaces(student_data.get("course", "")),
+        "course": _normalize_spaces(course_value),
         "year": _normalize_spaces(student_data.get("year", "")),
         "gender": _normalize_spaces(student_data.get("gender", "")).title(),
     }

@@ -1,9 +1,7 @@
-code,name,college_code
-BSN,Bachelor of Science in Nursing,CHS
+code,name,college
 BSCS,Bachelor of Science in Computer Science,CCS
 BSIS,Bachelor of Science in Information Systems,CCS
 BSIT,Bachelor of Science in Information Technology,CCS
-BSCA,Bachelor of Science in Computer Applications,CCS
 BS Bio-Animal Biology,Bachelor of Science in Biology (Animal Biology),CSM
 BS Bio-Plant Biology,Bachelor of Science in Biology (Plant Biology),CSM
 BS Bio-Biodiversity,Bachelor of Science in Biology (Biodiversity),CSM
@@ -30,17 +28,6 @@ BET-EET,Bachelor of Engineering Technology in Electrical Engineering Technology,
 BET-EST,Bachelor of Engineering Technology in Electronics Engineering Technology,COE
 BET-MET,Bachelor of Engineering Technology in Mechanical Engineering Technology,COE
 BET-MMT,Bachelor of Engineering Technology in Metallurgy and Materials Engineering Technology,COE
-BEEd-LE,Bachelor of Elementary Education in Language Education,CED
-BEEd-SM,Bachelor of Elementary Education in Science and Mathematics,CED
-BSEd-Bio,Bachelor of Secondary Education in Biology,CED
-BSEd-Chem,Bachelor of Secondary Education in Chemistry,CED
-BSEd-Math,Bachelor of Secondary Education in Mathematics,CED
-BSEd-Phys,Bachelor of Secondary Education in Physics,CED
-BSEd-Fil,Bachelor of Secondary Education in Filipino,CED
-BTVTEd-DT,Bachelor of Technical-Vocational Teacher Education in Drafting Technology,CED
-BTLEd-HE,Bachelor of Technology and Livelihood Education in Home Economics,CED
-BTLEd-IA,Bachelor of Technology and Livelihood Education in Industrial Arts,CED
-BPEd,Bachelor of Physical Education,CED
 BSA,Bachelor of Science in Accountancy,CEBA
 BS Econ,Bachelor of Science in Economics,CEBA
 BSENTREP,Bachelor of Science in Entrepreneurship,CEBA
@@ -59,3 +46,16 @@ BSPsych,Bachelor of Science in Psychology,CASS
 BSPhil,Bachelor of Science in Philosophy - Applied Ethics,CASS
 BSMEE,Bachelor of Science in Microelectronics Engineering,COE
 BS Applied Physics,Bachelor of Science in Applied Physics,CSM
+BSN,Bachelor of Science in Nursing,CHS
+BSCA,Bachelor of Science in Computer Applications,CCS
+BEEd-LE,Bachelor of Elementary Education in Language Education,CED
+BEEd-SM,Bachelor of Elementary Education in Science and Mathematics,CED
+BSEd-Bio,Bachelor of Secondary Education in Biology,CED
+BSEd-Chem,Bachelor of Secondary Education in Chemistry,CED
+BSEd-Math,Bachelor of Secondary Education in Mathematics,CED
+BSEd-Phys,Bachelor of Secondary Education in Physics,CED
+BSEd-Fil,Bachelor of Secondary Education in Filipino,CED
+BTVTEd-DT,Bachelor of Technical-Vocational Teacher Education in Drafting Technology,CED
+BTLEd-HE,Bachelor of Technology and Livelihood Education in Home Economics,CED
+BTLEd-IA,Bachelor of Technology and Livelihood Education in Industrial Arts,CED
+BPEd,Bachelor of Physical Education,CED
