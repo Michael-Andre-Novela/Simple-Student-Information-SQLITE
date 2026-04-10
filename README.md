@@ -62,7 +62,7 @@ A desktop application for managing student, program, and college records — bui
 ## 📁 Project Structure
 
 ```
-sis-SQLITE/
+Simple-Student-Information-SQLITE/
 ├── main.py                  # Preferred entry point
 ├── data/
 │   ├── students.csv         # Student records
@@ -86,10 +86,17 @@ sis-SQLITE/
 ## 🚀 Getting Started
 
 ### 1. Open the project folder
-If you're working from this workspace, open the `sis-SQLITE/` folder first.
+Clone the repository and open the generated folder (same as the repo link name).
 
 ```bash
-cd /path/to/your/sis-SQLITE
+git clone https://github.com/Michael-Andre-Novela/Simple-Student-Information-SQLITE.git
+cd Simple-Student-Information-SQLITE
+```
+
+If you already have the project locally, just open that folder directly and run:
+
+```bash
+cd /path/to/your/Simple-Student-Information-SQLITE
 ```
 
 ### 2. Create and activate a virtual environment
